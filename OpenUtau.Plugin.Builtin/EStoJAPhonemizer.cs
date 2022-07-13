@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using OpenUtau.Api;
@@ -48,7 +48,7 @@ namespace OpenUtau.Plugin.Builtin {
             { "U", "w" },
             { "w", "w" },
             { "y", "y" },
-            { "z", "s" },
+            { "z", "z" },
         };
 
         private Dictionary<string, string> StartingConsonant => startingConsonant;
@@ -101,6 +101,9 @@ namespace OpenUtau.Plugin.Builtin {
             { "tw", "tw" },
             { "w", "w" },
             { "y", "y" },
+            { "z", "s" },
+            { "zy", "sy" },
+            { "zw", "sw" },
         };
 
         private Dictionary<string, string> SoloConsonant => soloConsonant;
@@ -155,9 +158,12 @@ namespace OpenUtau.Plugin.Builtin {
             { "U", "う" },
             { "w", "う" },
             { "y", "い" },
+            { "z", "す" },
+            { "zy", "すぃ" },
+            { "zw", "す" },
         };
 
-        private readonly string[] SpecialClusters = "ky kw gy gw sy sw jw ty tw chw dy dw ny nw hy hw by bw py pw my mw ry rw rry rrw ly lw".Split();
+        private readonly string[] SpecialClusters = "ky kw gy gw sy sw zy zw jw ty tw chw dy dw ny nw hy hw by bw py pw my mw ry rw rry rrw ly lw".Split();
 
         private Dictionary<string, string> AltCv => altCv;
         private static readonly Dictionary<string, string> altCv = new Dictionary<string, string> {
@@ -178,18 +184,35 @@ namespace OpenUtau.Plugin.Builtin {
             {"swi", "sui" },
             {"swe", "sule" },
             {"swo", "sulo" },
+            {"zi", "suli" },
+            {"zya", "sulya" },
+            {"zyu", "sulyu" },
+            {"zye", "sulile" },
+            {"zyo", "sulyo" },
+            {"zwa", "sula" },
+            {"zwi", "sui" },
+            {"zwe", "sule" },
+            {"zwo", "sulo" },
             {"ti", "teli" },
             {"tya", "telya" },
             {"tyu", "telyu" },
             {"tye", "tele" },
             {"tyo", "telyo" },
             {"tu", "tolu" },
+            {"twa", "tola" },
+            {"twi", "toli" },
+            {"twe", "tole" },
+            {"two", "tolo" },
             {"di", "deli" },
             {"dya", "delya" },
             {"dyu", "delyu" },
             {"dye", "dele" },
             {"dyo", "delyo" },
             {"du", "dolu" },
+            {"dwa", "dola" },
+            {"dwi", "doli" },
+            {"dwe", "dole" },
+            {"dwo", "dolo" },
             {"nwa", "nula" },
             {"nwi", "nuli" },
             {"nwe", "nule" },
@@ -198,6 +221,10 @@ namespace OpenUtau.Plugin.Builtin {
             {"hwi", "holi" },
             {"hwe", "hole" },
             {"hwo", "holo" },
+            {"fwa", "fua" },
+            {"fwi", "fui" },
+            {"fwe", "fue" },
+            {"fwo", "fuo" },
             {"bwa", "bula" },
             {"bwi", "buli" },
             {"bwe", "bule" },
@@ -241,20 +268,20 @@ namespace OpenUtau.Plugin.Builtin {
             {"rryu", new [] { "ri", "ri", "ryu" } },
             {"rrye", new [] { "ri", "ri", "rye" } },
             {"rryo", new [] { "ri", "ri", "ryo" } },
-            {"rrwa", new [] { "ru", "ru", "rula" } },
-            {"rrwi", new [] { "ru", "ru", "ruli" } },
-            {"rrwe", new [] { "ru", "ru", "rule" } },
-            {"rrwo", new [] { "ru", "ru", "rulo" } },
+            {"rrwa", new [] { "ru", "ru", "wa" } },
+            {"rrwi", new [] { "ru", "ru", "uli" } },
+            {"rrwe", new [] { "ru", "ru", "ule" } },
+            {"rrwo", new [] { "ru", "ru", "ulo" } },
             {"kye", new [] { "ki", "e" } },
-            {"kwa", new [] { "ku", "wa" } },
-            {"kwi", new [] { "ku", "uli" } },
-            {"kwe", new [] { "ku", "ule" } },
-            {"kwo", new [] { "ku", "ulo" } },
+            {"kula", new [] { "ku", "wa" } },
+            {"kuli", new [] { "ku", "uli" } },
+            {"kule", new [] { "ku", "ule" } },
+            {"kulo", new [] { "ku", "ulo" } },
             {"gye", new [] { "gi", "e" } },
-            {"gwa", new [] { "gu", "wa" } },
-            {"gwi", new [] { "gu", "uli" } },
-            {"gwe", new [] { "gu", "ule" } },
-            {"gwo", new [] { "gu", "ulo" } },
+            {"gula", new [] { "gu", "wa" } },
+            {"guli", new [] { "gu", "uli" } },
+            {"gule", new [] { "gu", "ule" } },
+            {"gulo", new [] { "gu", "ulo" } },
             {"suli", new [] { "se", "i" } },
             {"sulya", new [] { "suli", "ya" } },
             {"sulyu", new [] { "suli", "yu" } },
@@ -272,14 +299,13 @@ namespace OpenUtau.Plugin.Builtin {
             {"teli", new [] { "te", "i" } },
             {"telya", new [] { "teli", "ya" } },
             {"telyu", new [] { "teli", "yu" } },
-            {"tele", new [] { "telile" } },
-            {"telile", new [] { "teli", "ye" } },
+            {"tele", new [] { "teli", "ye" } },
             {"telyo", new [] { "teli", "yo" } },
             {"tolu", new [] { "to", "u" } },
-            {"twa", new [] { "tolu", "wa" } },
-            {"twi", new [] { "tolu", "uli" } },
-            {"twe", new [] { "tolu", "ule" } },
-            {"two", new [] { "tolu", "ulo" } },
+            {"tola", new [] { "tolu", "wa" } },
+            {"toli", new [] { "tolu", "uli" } },
+            {"tole", new [] { "tolu", "ule" } },
+            {"tolo", new [] { "tolu", "ulo" } },
             {"che", new [] { "chi", "e" } },
             {"chwa", new [] { "chu", "wa" } },
             {"chwi", new [] { "chu", "uli" } },
@@ -288,14 +314,13 @@ namespace OpenUtau.Plugin.Builtin {
             {"deli", new [] { "de", "i" } },
             {"delya", new [] { "deli", "ya" } },
             {"delyu", new [] { "deli", "yu" } },
-            {"dele", new [] { "delile" } },
-            {"delile", new [] { "deli", "ye" } },
+            {"dele", new [] { "deli", "ye" } },
             {"delyo", new [] { "deli", "yo" } },
             {"dolu", new [] { "do", "u" } },
-            {"dwa", new [] { "dolu", "wa" } },
-            {"dwi", new [] { "dolu", "uli" } },
-            {"dwe", new [] { "dolu", "ule" } },
-            {"dwo", new [] { "dolu", "ulo" } },
+            {"dola", new [] { "dolu", "wa" } },
+            {"doli", new [] { "dolu", "uli" } },
+            {"dole", new [] { "dolu", "ule" } },
+            {"dolo", new [] { "dolu", "ulo" } },
             {"nye", new [] { "ni", "e" } },
             {"nula", new [] { "nu", "wa" } },
             {"nuli", new [] { "nu", "uli" } },
@@ -303,14 +328,18 @@ namespace OpenUtau.Plugin.Builtin {
             {"nulo", new [] { "nu", "ulo" } },
             {"hye", new [] { "hi", "e" } },
             {"holu", new [] { "ho", "u" } },
+            {"hola", new [] { "ho", "wa" } },
+            {"holi", new [] { "ho", "uli" } },
+            {"hole", new [] { "ho", "ule" } },
+            {"holo", new [] { "ho", "ulo" } },
             {"fa", new [] { "fu", "a" } },
             {"fi", new [] { "fu", "i" } },
             {"fe", new [] { "fu", "e" } },
             {"fo", new [] { "fu", "o" } },
-            {"fwa", new [] { "fu", "wa" } },
-            {"fwi", new [] { "fu", "uli" } },
-            {"fwe", new [] { "fu", "ule" } },
-            {"fwo", new [] { "fu", "ulo" } },
+            {"fua", new [] { "fu", "wa" } },
+            {"fui", new [] { "fu", "uli" } },
+            {"fue", new [] { "fu", "ule" } },
+            {"fuo", new [] { "fu", "ulo" } },
             {"fya", new [] { "fi", "ya" } },
             {"fyu", new [] { "fi", "yu" } },
             {"fye", new [] { "fi", "ye" } },
@@ -513,6 +542,15 @@ namespace OpenUtau.Plugin.Builtin {
                     }
                     phonemes.Add(solo);
                 }
+
+                if (solo.Contains("ん")) {
+                    if (ending.IsEndingVCWithOneConsonant) {
+                        TryAddPhoneme(phonemes, ending.tone, $"n R", $"n -", $"n-");
+                    } else if (ending.IsEndingVCWithMoreThanOneConsonant && cc.Last() == "n" || cc.Last() == "m") {
+                        TryAddPhoneme(phonemes, ending.tone, $"n R", $"n -", $"n-");
+                    }
+                }
+
                 prevV = WanaKana.ToRomaji(solo).Last<char>().ToString();
             }
 
