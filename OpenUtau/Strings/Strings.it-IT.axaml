@@ -52,7 +52,7 @@
   <system:String x:Key="lyrics.livepreview">Anteprima in tempo reale</system:String>
   <system:String x:Key="lyrics.max">Max</system:String>
   <system:String x:Key="lyrics.reset">Resetta</system:String>
-  <system:String x:Key="lyrics.selectnotes">Seleziona prima qualche nota!</system:String>
+  <system:String x:Key="lyrics.selectnotes">Seleziona note prima di questa operazione</system:String>
   <system:String x:Key="lyrics.separators">Separatori</system:String>
 
   <system:String x:Key="menu.edit">Modifica</system:String>
@@ -67,7 +67,7 @@
   <system:String x:Key="menu.file.exit">Esci</system:String>
   <system:String x:Key="menu.file.exportust">Esporta File Ust</system:String>
   <system:String x:Key="menu.file.exportustto">Esporta i File Ust in...</system:String>
-  <system:String x:Key="menu.file.exportwav">Esporta File Wav</system:String>-->
+  <system:String x:Key="menu.file.exportwav">Esporta File Wav</system:String>
   <system:String x:Key="menu.file.exportwavto">Esporta i File Wav in...</system:String>
   <system:String x:Key="menu.file.importaudio">Importa Audio...</system:String>
   <system:String x:Key="menu.file.importmidi">Importa MIDI...</system:String>
@@ -86,8 +86,8 @@
   <system:String x:Key="menu.help.about">Informazioni su OpenUTAU</system:String>
   <system:String x:Key="menu.help.wiki">OpenUTAU Wiki</system:String>
   <system:String x:Key="menu.tools">Strumenti</system:String>
-  <system:String x:Key="menu.tools.clearcache">Svuota Cache</system:String>-->
-  <system:String x:Key="menu.tools.debugwindow">Finestra di Debug</system:String>-->
+  <system:String x:Key="menu.tools.clearcache">Svuota Cache</system:String>
+  <system:String x:Key="menu.tools.debugwindow">Finestra di Debug</system:String>
   <system:String x:Key="menu.tools.layout">Disposizione</system:String>
   <system:String x:Key="menu.tools.layout.hsplit11">Orizzontale 1:1</system:String>
   <system:String x:Key="menu.tools.layout.hsplit12">Orizzontale 1:2</system:String>
