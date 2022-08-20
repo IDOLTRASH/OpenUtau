@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Reactive;
 using System.Security.Cryptography;
+using Avalonia.Threading;
 using OpenUtau.Core;
 using OpenUtau.Core.Editing;
 using OpenUtau.Core.Ustx;
@@ -19,6 +20,25 @@ namespace OpenUtau.App.ViewModels {
         }
     }
 
+    public class NotesContextMenuArgs {
+        public bool ForNote { get; set; }
+        public NoteHitInfo NoteHitInfo { get; set; }
+        public ReactiveCommand<NoteHitInfo, Unit>? NoteDeleteCommand { get; set; }
+
+        public bool ForPitchPoint { get; set; }
+        public bool PitchPointIsFirst { get; set; }
+        public bool PitchPointCanDel { get; set; }
+        public bool PitchPointCanAdd { get; set; }
+        public PitchPointHitInfo PitchPointHitInfo { get; set; }
+        public ReactiveCommand<PitchPointHitInfo, Unit>? PitchPointEaseInOutCommand { get; set; }
+        public ReactiveCommand<PitchPointHitInfo, Unit>? PitchPointLinearCommand { get; set; }
+        public ReactiveCommand<PitchPointHitInfo, Unit>? PitchPointEaseInCommand { get; set; }
+        public ReactiveCommand<PitchPointHitInfo, Unit>? PitchPointEaseOutCommand { get; set; }
+        public ReactiveCommand<PitchPointHitInfo, Unit>? PitchPointSnapCommand { get; set; }
+        public ReactiveCommand<PitchPointHitInfo, Unit>? PitchPointDelCommand { get; set; }
+        public ReactiveCommand<PitchPointHitInfo, Unit>? PitchPointAddCommand { get; set; }
+    }
+
     public class PianoRollViewModel : ViewModelBase, ICmdSubscriber {
 
         public bool ExtendToFrame => OS.IsMacOS();
@@ -29,6 +49,7 @@ namespace OpenUtau.App.ViewModels {
         [Reactive] public List<MenuItemViewModel> NoteBatchEdits { get; set; }
         [Reactive] public List<MenuItemViewModel> LyricBatchEdits { get; set; }
         [Reactive] public double Progress { get; set; }
+        public ReactiveCommand<NoteHitInfo, Unit> NoteDeleteCommand { get; set; }
         public ReactiveCommand<PitchPointHitInfo, Unit> PitEaseInOutCommand { get; set; }
         public ReactiveCommand<PitchPointHitInfo, Unit> PitLinearCommand { get; set; }
         public ReactiveCommand<PitchPointHitInfo, Unit> PitEaseInCommand { get; set; }
@@ -43,6 +64,9 @@ namespace OpenUtau.App.ViewModels {
         public PianoRollViewModel() {
             NotesViewModel = new NotesViewModel();
 
+            NoteDeleteCommand = ReactiveCommand.Create<NoteHitInfo>(info => {
+                NotesViewModel.DeleteSelectedNotes();
+            });
             PitEaseInOutCommand = ReactiveCommand.Create<PitchPointHitInfo>(info => {
                 DocManager.Inst.StartUndoGroup();
                 DocManager.Inst.ExecuteCmd(new ChangePitchPointShapeCommand(NotesViewModel.Part, info.Note.pitch.data[info.Index], PitchPointShape.io));
@@ -160,14 +184,6 @@ namespace OpenUtau.App.ViewModels {
         public void Undo() => DocManager.Inst.Undo();
         public void Redo() => DocManager.Inst.Redo();
 
-        public void RenamePart(UVoicePart part, string name) {
-            if (!string.IsNullOrWhiteSpace(name) && name != part.name) {
-                DocManager.Inst.StartUndoGroup();
-                DocManager.Inst.ExecuteCmd(new RenamePartCommand(DocManager.Inst.Project, part, name));
-                DocManager.Inst.EndUndoGroup();
-            }
-        }
-
         public void MouseoverPhoneme(UPhoneme? phoneme) {
             MessageBus.Current.SendMessage(new PhonemeMouseoverEvent(phoneme));
         }
@@ -184,7 +200,9 @@ namespace OpenUtau.App.ViewModels {
 
         public void OnNext(UCommand cmd, bool isUndo) {
             if (cmd is ProgressBarNotification progressBarNotification) {
-                Progress = progressBarNotification.Progress;
+                Dispatcher.UIThread.InvokeAsync(() => {
+                    Progress = progressBarNotification.Progress;
+                });
             }
         }
 

@@ -11,6 +11,8 @@
   <system:String x:Key="context.pitch.pointsnapprev">Snap terug naar vorige noot</system:String>
 
   <system:String x:Key="debug.clear">wegwissen</system:String>
+  <system:String x:Key="debug.copylog">Kopieer Log</system:String>
+  <system:String x:Key="debug.reverselogorder">Log volgorde omkeren</system:String>
 
   <system:String x:Key="dialogs.about.caption">Over OpenUTAU</system:String>
   <system:String x:Key="dialogs.about.message">
@@ -110,7 +112,7 @@
   <system:String x:Key="notedefaults.preset.namenew">Nieuwe Preset Naam</system:String>
   <system:String x:Key="notedefaults.preset.remove">Wissen</system:String>
   <system:String x:Key="notedefaults.preset.remove.tooltip">Verwijdert de laatst toegepaste preset.</system:String>
-  <system:String x:Key="notedefaults.preset.save">Save</system:String>
+  <system:String x:Key="notedefaults.preset.save">Sla  op</system:String>
   <system:String x:Key="notedefaults.preset.save.tooltip">Sla de huidige instellingen op in een nieuwe preset.</system:String>
   <system:String x:Key="notedefaults.reset">Reset alle instellingen</system:String>
   <system:String x:Key="notedefaults.reset.tooltip">Zet elke instelling terug naar de standaardwaarden.
@@ -139,6 +141,7 @@ Waarschuwing: deze optie verwijdert aangepaste voorinstellingen.</system:String>
   <system:String x:Key="oto.suffix">Achtervoegsel</system:String>
 
   <system:String x:Key="pianoroll.menu.lyrics">Songtekst</system:String>
+  <system:String x:Key="pianoroll.menu.lyrics.dashtoplus">Vervang "-" door "+"</system:String>
   <system:String x:Key="pianoroll.menu.lyrics.edit">Bewerk Lyrics</system:String>
   <system:String x:Key="pianoroll.menu.lyrics.hiraganatoromaji">Hiragana naar Romaji</system:String>
   <system:String x:Key="pianoroll.menu.lyrics.javcvtocv">Japanese VCV naar CV</system:String>
@@ -167,6 +170,7 @@ Waarschuwing: deze optie verwijdert aangepaste voorinstellingen.</system:String>
   <system:String x:Key="pianoroll.toggle.tips">Bekijk tips (T)</system:String>
   <system:String x:Key="pianoroll.toggle.tone">schakel noot toon (Y)</system:String>
   <system:String x:Key="pianoroll.toggle.vibrato">Vibrato weergeven (U)</system:String>
+  <system:String x:Key="pianoroll.toggle.waveform">Golfvorm weergeven (W)</system:String>
   <system:String x:Key="pianoroll.tool.drawpitch">toonhoogte tekenen (4)</system:String>
   <system:String x:Key="pianoroll.tool.eraser">Gummetje (3)</system:String>
   <system:String x:Key="pianoroll.tool.knife">Mess (5)</system:String>
@@ -183,6 +187,7 @@ Houd Ctrl ingedrukt om meer te selecteren</system:String>
   <system:String x:Key="prefs.advanced.stable">Stabiel</system:String>
   <system:String x:Key="prefs.appearance">Uiterlijk</system:String>
   <system:String x:Key="prefs.appearance.lang">Taal</system:String>
+  <system:String x:Key="prefs.appearance.showportrait">Toon portret op pianorol</system:String>
   <system:String x:Key="prefs.appearance.theme">Thema</system:String>
   <system:String x:Key="prefs.appearance.theme.dark">Donker</system:String>
   <system:String x:Key="prefs.appearance.theme.light">Licht</system:String>
@@ -211,6 +216,7 @@ Houd Ctrl ingedrukt om meer te selecteren</system:String>
   <system:String x:Key="prefs.playback.test">Test</system:String>
   <system:String x:Key="prefs.rendering">Renderen</system:String>
   <system:String x:Key="prefs.rendering.phasecomp">Fase Compensatie</system:String>
+  <system:String x:Key="prefs.rendering.prerender">Pre-render</system:String>
   <system:String x:Key="prefs.rendering.prerender.threads">Pre-render Draden</system:String>
   <system:String x:Key="prefs.rendering.resampler">Resampler</system:String>
   <system:String x:Key="prefs.rendering.resampler.morewarn">
@@ -238,7 +244,7 @@ Waarschuwing: moresampler wordt niet volledig ondersteund. Het kan traag zijn en
   <system:String x:Key="singers.refresh">Vernieuwen</system:String>
   <system:String x:Key="singers.setdefaultphonemizer">Standaard Phonemizer instellen</system:String>
   <system:String x:Key="singers.setencoding">Codering instellen</system:String>
-  <system:String x:Key="singers.setportrait">Set Portrait</system:String>
+  <system:String x:Key="singers.setportrait">Set Portret</system:String>
   <system:String x:Key="singers.subbanks.cancel">Annuleer</system:String>
   <system:String x:Key="singers.subbanks.clear">verwijderen</system:String>
   <system:String x:Key="singers.subbanks.color">Kleur</system:String>
@@ -288,8 +294,8 @@ Algemeen
   <system:String x:Key="tracks.selectrenderer">Select Renderer</system:String>
   <system:String x:Key="tracks.selectsinger">kies Zanger</system:String>
 
-  <!--<FontFamily x:Key="ui.fontfamily">Segoe UI,San Francisco,Helvetica Neue</FontFamily>-->
-  <!--<FontFamily x:Key="ui.textbox.fontfamily">Microsoft YaHei,Simsun,苹方-简,宋体-简</FontFamily>-->
+  <FontFamily x:Key="ui.fontfamily">Segoe UI,San Francisco,Helvetica Neue</FontFamily>
+  <FontFamily x:Key="ui.textbox.fontfamily">Microsoft YaHei,Simsun,苹方-简,宋体-简</FontFamily>
 
   <system:String x:Key="updater.caption">Controleren op updates</system:String>
   <system:String x:Key="updater.description">Open zang synthese platform</system:String>

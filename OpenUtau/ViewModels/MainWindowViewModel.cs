@@ -12,6 +12,13 @@ using ReactiveUI.Fody.Helpers;
 using Serilog;
 
 namespace OpenUtau.App.ViewModels {
+    public class PartsContextMenuArgs {
+        public UPart? Part { get; set; }
+        public bool IsVoicePart => Part is UVoicePart;
+        public ReactiveCommand<UPart, Unit>? PartDeleteCommand { get; set; }
+        public ReactiveCommand<UPart, Unit>? PartRenameCommand { get; set; }
+    }
+
     public class MainWindowViewModel : ViewModelBase, ICmdSubscriber {
         public bool ExtendToFrame => OS.IsMacOS();
         public string Title => !ProjectSaved
@@ -29,6 +36,7 @@ namespace OpenUtau.App.ViewModels {
         public string AppVersion => $"OpenUtau v{System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version}";
         [Reactive] public double Progress { get; set; }
         [Reactive] public string ProgressText { get; set; }
+        public ReactiveCommand<UPart, Unit> PartDeleteCommand { get; set; }
 
         private ObservableCollectionExtended<MenuItemViewModel> openRecent
             = new ObservableCollectionExtended<MenuItemViewModel>();
@@ -45,6 +53,9 @@ namespace OpenUtau.App.ViewModels {
                 OpenProject(new[] { file });
                 DocManager.Inst.Project.Saved = false;
                 DocManager.Inst.Project.FilePath = null;
+            });
+            PartDeleteCommand = ReactiveCommand.Create<UPart>(part => {
+                TracksViewModel.DeleteSelectedParts();
             });
             DocManager.Inst.AddSubscriber(this);
         }
@@ -176,8 +187,10 @@ namespace OpenUtau.App.ViewModels {
 
         public void OnNext(UCommand cmd, bool isUndo) {
             if (cmd is ProgressBarNotification progressBarNotification) {
-                Progress = progressBarNotification.Progress;
-                ProgressText = progressBarNotification.Info;
+                Dispatcher.UIThread.InvokeAsync(() => {
+                    Progress = progressBarNotification.Progress;
+                    ProgressText = progressBarNotification.Info;
+                });
             } else if (cmd is LoadProjectNotification loadProject) {
                 Core.Util.Preferences.AddRecentFile(loadProject.project.FilePath);
             } else if (cmd is SaveProjectNotification saveProject) {

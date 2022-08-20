@@ -5,6 +5,7 @@
         xmlns:vm="using:OpenUtau.App.ViewModels"
         mc:Ignorable="d" d:DesignWidth="500" d:DesignHeight="600"
         x:Class="OpenUtau.App.Views.PreferencesDialog"
+        Icon="/Assets/open-utau.ico"
         Title="{DynamicResource prefs.caption}"
         WindowStartupLocation="CenterScreen"
         MinWidth="500" MinHeight="600" Width="500" Height="600"
@@ -84,6 +85,11 @@
               <ComboBoxItem Content="{DynamicResource prefs.off}"/>
               <ComboBoxItem Content="{DynamicResource prefs.on}"/>
             </ComboBox>
+            <TextBlock Text="{DynamicResource prefs.rendering.prerender}" />
+            <ComboBox HorizontalAlignment="Stretch"  SelectedIndex="{Binding PreRender}">
+              <ComboBoxItem Content="{DynamicResource prefs.off}"/>
+              <ComboBoxItem Content="{DynamicResource prefs.on}"/>
+            </ComboBox>
           </StackPanel>
         </HeaderedContentControl>
         <HeaderedContentControl Classes="groupbox" Header="{DynamicResource prefs.appearance}">
@@ -103,6 +109,11 @@
               <ComboBoxItem Content="{DynamicResource prefs.appearance.theme.dark}"/>
             </ComboBox>
             <TextBlock TextWrapping="Wrap" Text="{DynamicResource prefs.note.restart}" FontSize="11"/>
+            <TextBlock Margin="0,4,0,0" Text="{DynamicResource prefs.appearance.showportrait}" />
+            <ComboBox HorizontalAlignment="Stretch" SelectedIndex="{Binding ShowPortrait}">
+              <ComboBoxItem Content="{DynamicResource prefs.off}"/>
+              <ComboBoxItem Content="{DynamicResource prefs.on}"/>
+            </ComboBox>
           </StackPanel>
         </HeaderedContentControl>
         <HeaderedContentControl Classes="groupbox" Header="{DynamicResource prefs.advanced}">

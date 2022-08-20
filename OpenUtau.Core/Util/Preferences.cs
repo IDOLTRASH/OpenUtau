@@ -87,6 +87,7 @@ namespace OpenUtau.Core.Util {
             public bool ShowTips = true;
             public int Theme;
             public int PhaseCompensation = 1;
+            public bool PreRender = true;
             public string Language = string.Empty;
             public List<string> RecentFiles = new List<string>();
             public string SkipUpdate = string.Empty;
@@ -102,6 +103,7 @@ namespace OpenUtau.Core.Util {
             public int LockStartTime = 0;
             public int PlaybackAutoScroll = 1;
             public bool ReverseLogOrder = true;
+            public bool ShowPortrait = true;
         }
     }
 }

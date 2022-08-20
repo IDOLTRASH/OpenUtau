@@ -17,7 +17,8 @@
   </Window.Styles>
   <Grid DragDrop.AllowDrop="True">
     <Grid RowDefinitions="24,24,1*,20,4" ColumnDefinitions="250,*,24" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" Margin="{Binding $parent[1].WindowDecorationMargin}">
-      <Menu Grid.Row="0" Grid.Column="0" VerticalAlignment="Top" HorizontalAlignment="Left" MenuOpened="OnMainMenuOpened">
+      <Menu Grid.Row="0" Grid.Column="0" VerticalAlignment="Top" HorizontalAlignment="Left"
+            MenuOpened="OnMainMenuOpened" MenuClosed="OnMainMenuClosed" PointerLeave="OnMainMenuPointerLeave">
         <MenuItem Header="{DynamicResource menu.file}">
           <MenuItem Header="{DynamicResource menu.file.new}" InputGesture="Ctrl+N" Click="OnMenuNew"/>
           <MenuItem Header="{DynamicResource menu.file.newfromtemplate}" Items="{Binding OpenTemplates}">
@@ -188,6 +189,19 @@
                    Canvas.Top="0"
                    Fill="{DynamicResource NeutralAccentBrushSemi2}"
                    IsHitTestVisible="False"/>
+        <c:PartsCanvas.ContextMenu>
+          <ContextMenu Name="PartsContextMenu"
+                       ContextMenuOpening="PartsContextMenuOpening"
+                       ContextMenuClosing="PartsContextMenuClosing">
+            <MenuItem Header="{DynamicResource context.part.delete}"
+                      Command="{Binding PartDeleteCommand}"
+                      CommandParameter="{Binding Part}"/>
+            <MenuItem Header="{DynamicResource context.part.rename}"
+                      IsVisible="{Binding IsVoicePart}"
+                      Command="{Binding PartRenameCommand}"
+                      CommandParameter="{Binding Part}"/>
+          </ContextMenu>
+        </c:PartsCanvas.ContextMenu>
       </c:PartsCanvas>
       <Border Grid.Row="1" Grid.RowSpan="2" Grid.Column="1" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="Transparent"
               BoxShadow="inset 0 0 5 1 #3F000000" ClipToBounds="True" IsHitTestVisible="False">
