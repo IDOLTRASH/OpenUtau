@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -49,14 +49,14 @@ namespace OpenUtau.Core.Render {
             this.startTick = startTick;
         }
 
-        public Tuple<MasterAdapter, List<Fader>> RenderProject(int startTick, TaskScheduler uiScheduler, ref CancellationTokenSource cancellation) {
+        public Tuple<WaveMix, List<Fader>> RenderMixdown(int startTick, TaskScheduler uiScheduler, ref CancellationTokenSource cancellation, bool wait = false) {
             var newCancellation = new CancellationTokenSource();
             var oldCancellation = Interlocked.Exchange(ref cancellation, newCancellation);
             if (oldCancellation != null) {
                 oldCancellation.Cancel();
                 oldCancellation.Dispose();
             }
-            double startMs = project.TickToMillisecond(startTick);
+            double startMs = project.timeAxis.TickPosToMsPos(startTick);
             var faders = new List<Fader>();
             var requests = PrepareRequests()
                 .Where(request => request.sources.Length > 0 && request.sources.Max(s => s.EndMs) > startMs)
@@ -74,31 +74,44 @@ namespace OpenUtau.Core.Render {
                     .Select(part => part as UWavePart)
                     .Where(part => part.Samples != null)
                     .Select(part => {
+                        double offsetMs = project.timeAxis.TickPosToMsPos(part.position);
+                        double estimatedLengthMs = project.timeAxis.TickPosToMsPos(part.End) - offsetMs;
                         var waveSource = new WaveSource(
-                            project.TickToMillisecond(part.position),
-                            project.TickToMillisecond(part.Duration),
+                            offsetMs,
+                            estimatedLengthMs,
                             part.skipMs, part.channels);
                         waveSource.SetSamples(part.Samples);
                         return (ISignalSource)waveSource;
                     }));
                 var trackMix = new WaveMix(trackSources);
                 var fader = new Fader(trackMix);
-                fader.Scale = PlaybackManager.DecibelToVolume(track.Mute ? -24 : track.Volume);
+                fader.Scale = PlaybackManager.DecibelToVolume(track.Muted ? -24 : track.Volume);
+                fader.Pan = (float)track.Pan;
                 fader.SetScaleToTarget();
                 faders.Add(fader);
             }
-            Task.Run(() => {
-                RenderRequests(requests, uiScheduler, newCancellation, playing: true);
-            }).ContinueWith(task => {
+            var task = Task.Run(() => {
+                RenderRequests(requests, newCancellation, playing: !wait);
+            });
+            task.ContinueWith(task => {
                 if (task.IsFaulted) {
                     Log.Error(task.Exception, "Failed to render.");
-                    DocManager.Inst.ExecuteCmd(new UserMessageNotification(task.Exception.Flatten().Message));
+                    DocManager.Inst.ExecuteCmd(new ErrorMessageNotification("Failed to render.", task.Exception));
                     throw task.Exception;
                 }
             }, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, uiScheduler);
-            var master = new MasterAdapter(new WaveMix(faders));
+            if (wait) {
+                task.Wait();
+            }
+            return Tuple.Create(new WaveMix(faders), faders);
+        }
+
+        public Tuple<MasterAdapter, List<Fader>> RenderProject(int startTick, TaskScheduler uiScheduler, ref CancellationTokenSource cancellation) {
+            double startMs = project.timeAxis.TickPosToMsPos(startTick);
+            var renderMixdownResult = RenderMixdown(startTick, uiScheduler, ref cancellation,wait:false);
+            var master = new MasterAdapter(renderMixdownResult.Item1);
             master.SetPosition((int)(startMs * 44100 / 1000) * 2);
-            return Tuple.Create(master, faders);
+            return Tuple.Create(master, renderMixdownResult.Item2);
         }
 
         public List<WaveMix> RenderTracks(TaskScheduler uiScheduler, ref CancellationTokenSource cancellation) {
@@ -120,7 +133,7 @@ namespace OpenUtau.Core.Render {
                     if (trackRequests.Length == 0) {
                         trackMixes.Add(null);
                     } else {
-                        RenderRequests(trackRequests, uiScheduler, newCancellation);
+                        RenderRequests(trackRequests, newCancellation);
                         var mix = new WaveMix(trackRequests.Select(req => req.mix).ToArray());
                         trackMixes.Add(mix);
                     }
@@ -128,7 +141,7 @@ namespace OpenUtau.Core.Render {
             return trackMixes;
         }
 
-        public void PreRenderProject(TaskScheduler uiScheduler, ref CancellationTokenSource cancellation) {
+        public void PreRenderProject(ref CancellationTokenSource cancellation) {
             var newCancellation = new CancellationTokenSource();
             var oldCancellation = Interlocked.Exchange(ref cancellation, newCancellation);
             if (oldCancellation != null) {
@@ -141,7 +154,7 @@ namespace OpenUtau.Core.Render {
                     if (newCancellation.Token.IsCancellationRequested) {
                         return;
                     }
-                    RenderRequests(PrepareRequests(), uiScheduler, newCancellation);
+                    RenderRequests(PrepareRequests(), newCancellation);
                 } catch (Exception e) {
                     if (!newCancellation.IsCancellationRequested) {
                         Log.Error(e, "Failed to pre-render.");
@@ -178,7 +191,6 @@ namespace OpenUtau.Core.Render {
 
         private void RenderRequests(
             RenderPartRequest[] requests,
-            TaskScheduler uiScheduler,
             CancellationTokenSource cancellation,
             bool playing = false) {
             if (requests.Length == 0 || cancellation.IsCancellationRequested) {
@@ -190,9 +202,9 @@ namespace OpenUtau.Core.Render {
                 .ToArray();
             if (playing) {
                 var orderedTuples = tuples
-                    .Where(tuple => tuple.Item1.endPosition > startTick)
-                    .OrderBy(tuple => tuple.Item1.endPosition)
-                    .Concat(tuples.Where(tuple => tuple.Item1.endPosition <= startTick))
+                    .Where(tuple => tuple.Item1.end > startTick)
+                    .OrderBy(tuple => tuple.Item1.end)
+                    .Concat(tuples.Where(tuple => tuple.Item1.end <= startTick))
                     .ToArray();
                 tuples = orderedTuples;
             }
@@ -210,14 +222,14 @@ namespace OpenUtau.Core.Render {
                 if (request.sources.All(s => s.HasSamples)) {
                     request.part.SetMix(request.mix);
                     new Task(() => DocManager.Inst.ExecuteCmd(new PartRenderedNotification(request.part)))
-                        .Start(uiScheduler);
+                        .Start(DocManager.Inst.MainScheduler);
                 }
             }
             progress.Clear();
         }
 
         public static void ReleaseSourceTemp() {
-            Classic.VoicebankFiles.ReleaseSourceTemp();
+            Classic.VoicebankFiles.Inst.ReleaseSourceTemp();
         }
     }
 }

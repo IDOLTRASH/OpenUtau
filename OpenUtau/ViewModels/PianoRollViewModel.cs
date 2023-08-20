@@ -1,16 +1,14 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Reactive;
-using System.Security.Cryptography;
 using Avalonia.Threading;
+using DynamicData.Binding;
+using OpenUtau.Classic;
 using OpenUtau.Core;
 using OpenUtau.Core.Editing;
 using OpenUtau.Core.Ustx;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
-using Serilog;
 
 namespace OpenUtau.App.ViewModels {
     public class PhonemeMouseoverEvent {
@@ -21,22 +19,16 @@ namespace OpenUtau.App.ViewModels {
     }
 
     public class NotesContextMenuArgs {
+        public PianoRollViewModel? ViewModel { get; set; }
+
         public bool ForNote { get; set; }
         public NoteHitInfo NoteHitInfo { get; set; }
-        public ReactiveCommand<NoteHitInfo, Unit>? NoteDeleteCommand { get; set; }
 
         public bool ForPitchPoint { get; set; }
         public bool PitchPointIsFirst { get; set; }
         public bool PitchPointCanDel { get; set; }
         public bool PitchPointCanAdd { get; set; }
         public PitchPointHitInfo PitchPointHitInfo { get; set; }
-        public ReactiveCommand<PitchPointHitInfo, Unit>? PitchPointEaseInOutCommand { get; set; }
-        public ReactiveCommand<PitchPointHitInfo, Unit>? PitchPointLinearCommand { get; set; }
-        public ReactiveCommand<PitchPointHitInfo, Unit>? PitchPointEaseInCommand { get; set; }
-        public ReactiveCommand<PitchPointHitInfo, Unit>? PitchPointEaseOutCommand { get; set; }
-        public ReactiveCommand<PitchPointHitInfo, Unit>? PitchPointSnapCommand { get; set; }
-        public ReactiveCommand<PitchPointHitInfo, Unit>? PitchPointDelCommand { get; set; }
-        public ReactiveCommand<PitchPointHitInfo, Unit>? PitchPointAddCommand { get; set; }
     }
 
     public class PianoRollViewModel : ViewModelBase, ICmdSubscriber {
@@ -45,11 +37,18 @@ namespace OpenUtau.App.ViewModels {
         [Reactive] public NotesViewModel NotesViewModel { get; set; }
         [Reactive] public PlaybackViewModel? PlaybackViewModel { get; set; }
 
-        [Reactive] public List<MenuItemViewModel>? LegacyPlugins { get; set; }
-        [Reactive] public List<MenuItemViewModel> NoteBatchEdits { get; set; }
-        [Reactive] public List<MenuItemViewModel> LyricBatchEdits { get; set; }
+        public ObservableCollectionExtended<MenuItemViewModel> LegacyPlugins { get; private set; }
+            = new ObservableCollectionExtended<MenuItemViewModel>();
+        public ObservableCollectionExtended<MenuItemViewModel> NoteBatchEdits { get; private set; }
+            = new ObservableCollectionExtended<MenuItemViewModel>();
+        public ObservableCollectionExtended<MenuItemViewModel> LyricBatchEdits { get; private set; }
+            = new ObservableCollectionExtended<MenuItemViewModel>();
+        public ObservableCollectionExtended<MenuItemViewModel> NotesContextMenuItems { get; private set; }
+            = new ObservableCollectionExtended<MenuItemViewModel>();
+
         [Reactive] public double Progress { get; set; }
         public ReactiveCommand<NoteHitInfo, Unit> NoteDeleteCommand { get; set; }
+        public ReactiveCommand<NoteHitInfo, Unit> NoteCopyCommand { get; set; }
         public ReactiveCommand<PitchPointHitInfo, Unit> PitEaseInOutCommand { get; set; }
         public ReactiveCommand<PitchPointHitInfo, Unit> PitLinearCommand { get; set; }
         public ReactiveCommand<PitchPointHitInfo, Unit> PitEaseInCommand { get; set; }
@@ -67,37 +66,47 @@ namespace OpenUtau.App.ViewModels {
             NoteDeleteCommand = ReactiveCommand.Create<NoteHitInfo>(info => {
                 NotesViewModel.DeleteSelectedNotes();
             });
+            NoteCopyCommand = ReactiveCommand.Create<NoteHitInfo>(info => {
+                NotesViewModel.CopyNotes();
+            });
             PitEaseInOutCommand = ReactiveCommand.Create<PitchPointHitInfo>(info => {
+                if (NotesViewModel.Part == null) { return; }
                 DocManager.Inst.StartUndoGroup();
                 DocManager.Inst.ExecuteCmd(new ChangePitchPointShapeCommand(NotesViewModel.Part, info.Note.pitch.data[info.Index], PitchPointShape.io));
                 DocManager.Inst.EndUndoGroup();
             });
             PitLinearCommand = ReactiveCommand.Create<PitchPointHitInfo>(info => {
+                if (NotesViewModel.Part == null) { return; }
                 DocManager.Inst.StartUndoGroup();
                 DocManager.Inst.ExecuteCmd(new ChangePitchPointShapeCommand(NotesViewModel.Part, info.Note.pitch.data[info.Index], PitchPointShape.l));
                 DocManager.Inst.EndUndoGroup();
             });
             PitEaseInCommand = ReactiveCommand.Create<PitchPointHitInfo>(info => {
+                if (NotesViewModel.Part == null) { return; }
                 DocManager.Inst.StartUndoGroup();
                 DocManager.Inst.ExecuteCmd(new ChangePitchPointShapeCommand(NotesViewModel.Part, info.Note.pitch.data[info.Index], PitchPointShape.i));
                 DocManager.Inst.EndUndoGroup();
             });
             PitEaseOutCommand = ReactiveCommand.Create<PitchPointHitInfo>(info => {
+                if (NotesViewModel.Part == null) { return; }
                 DocManager.Inst.StartUndoGroup();
                 DocManager.Inst.ExecuteCmd(new ChangePitchPointShapeCommand(NotesViewModel.Part, info.Note.pitch.data[info.Index], PitchPointShape.o));
                 DocManager.Inst.EndUndoGroup();
             });
             PitSnapCommand = ReactiveCommand.Create<PitchPointHitInfo>(info => {
+                if (NotesViewModel.Part == null) { return; }
                 DocManager.Inst.StartUndoGroup();
                 DocManager.Inst.ExecuteCmd(new SnapPitchPointCommand(NotesViewModel.Part, info.Note));
                 DocManager.Inst.EndUndoGroup();
             });
             PitDelCommand = ReactiveCommand.Create<PitchPointHitInfo>(info => {
+                if (NotesViewModel.Part == null) { return; }
                 DocManager.Inst.StartUndoGroup();
                 DocManager.Inst.ExecuteCmd(new DeletePitchPointCommand(NotesViewModel.Part, info.Note, info.Index));
                 DocManager.Inst.EndUndoGroup();
             });
             PitAddCommand = ReactiveCommand.Create<PitchPointHitInfo>(info => {
+                if (NotesViewModel.Part == null) { return; }
                 DocManager.Inst.StartUndoGroup();
                 DocManager.Inst.ExecuteCmd(new AddPitchPointCommand(NotesViewModel.Part, info.Note, new PitchPoint(info.X, info.Y), info.Index + 1));
                 DocManager.Inst.EndUndoGroup();
@@ -107,77 +116,71 @@ namespace OpenUtau.App.ViewModels {
                 if (NotesViewModel.Part == null || NotesViewModel.Part.notes.Count == 0) {
                     return;
                 }
-                try {
-                    var project = NotesViewModel.Project;
-                    var part = NotesViewModel.Part;
-                    var tempFile = Path.Combine(PathManager.Inst.CachePath, "temp.tmp");
-                    UNote? first = null;
-                    UNote? last = null;
-                    if (NotesViewModel.SelectedNotes.Count == 0) {
-                        first = part.notes.First();
-                        last = part.notes.Last();
-                    } else {
-                        var ordered = NotesViewModel.SelectedNotes.OrderBy(n => n.position);
-                        first = ordered.First();
-                        last = ordered.Last();
-                    }
-                    var sequence = Classic.Ust.WritePlugin(project, part, first, last, tempFile);
-                    byte[]? beforeHash = HashFile(tempFile);
-                    plugin.Run(tempFile);
-                    byte[]? afterHash = HashFile(tempFile);
-                    if (beforeHash == null || afterHash == null || Enumerable.SequenceEqual(beforeHash, afterHash)) {
-                        Log.Information("Legacy plugin temp file has not changed.");
-                        return;
-                    }
-                    Log.Information("Legacy plugin temp file has changed.");
-                    var (toRemove, toAdd) = Classic.Ust.ParsePlugin(project, part, first, last, sequence, tempFile);
-                    DocManager.Inst.StartUndoGroup();
-                    DocManager.Inst.ExecuteCmd(new RemoveNoteCommand(part, toRemove));
-                    DocManager.Inst.ExecuteCmd(new AddNoteCommand(part, toAdd));
-                    DocManager.Inst.EndUndoGroup();
-                } catch (Exception e) {
-                    DocManager.Inst.ExecuteCmd(new UserMessageNotification($"Failed to execute plugin {e}"));
+                var part = NotesViewModel.Part;
+                UNote? first;
+                UNote? last;
+                if (NotesViewModel.Selection.IsEmpty) {
+                    first = part.notes.First();
+                    last = part.notes.Last();
+                } else {
+                    first = NotesViewModel.Selection.FirstOrDefault();
+                    last = NotesViewModel.Selection.LastOrDefault();
                 }
+                var runner = PluginRunner.from(PathManager.Inst, DocManager.Inst);
+                runner.Execute(NotesViewModel.Project, part, first, last, plugin);
             });
-            LegacyPlugins = DocManager.Inst.Plugins?.Select(plugin => new MenuItemViewModel() {
+            LegacyPlugins.AddRange(DocManager.Inst.Plugins.Select(plugin => new MenuItemViewModel() {
                 Header = plugin.Name,
                 Command = legacyPluginCommand,
                 CommandParameter = plugin,
-            }).ToList();
+            }));
 
             noteBatchEditCommand = ReactiveCommand.Create<BatchEdit>(edit => {
                 if (NotesViewModel.Part != null) {
-                    edit.Run(NotesViewModel.Project, NotesViewModel.Part, NotesViewModel.SelectedNotes, DocManager.Inst);
+                    try{
+                        edit.Run(NotesViewModel.Project, NotesViewModel.Part, NotesViewModel.Selection.ToList(), DocManager.Inst);
+                    }catch(System.Exception e){
+                        DocManager.Inst.ExecuteCmd(new ErrorMessageNotification("Failed to run editing macro",e));
+                    }
                 }
             });
-            NoteBatchEdits = new List<BatchEdit>() {
+            NoteBatchEdits.AddRange(new List<BatchEdit>() {
                 new LoadRenderedPitch(),
                 new AddTailNote("-", "pianoroll.menu.notes.addtaildash"),
                 new AddTailNote("R", "pianoroll.menu.notes.addtailrest"),
+                new RemoveTailNote("-", "pianoroll.menu.notes.removetaildash"),
+                new RemoveTailNote("R", "pianoroll.menu.notes.removetailrest"),
+                new Transpose(12, "pianoroll.menu.notes.octaveup"),
+                new Transpose(-12, "pianoroll.menu.notes.octavedown"),
                 new QuantizeNotes(15),
                 new QuantizeNotes(30),
+                new AutoLegato(),
+                new HanziToPinyin(),
                 new ResetPitchBends(),
                 new ResetAllExpressions(),
                 new ClearVibratos(),
                 new ResetVibratos(),
                 new ClearTimings(),
+                new BakePitch(),
             }.Select(edit => new MenuItemViewModel() {
                 Header = ThemeManager.GetString(edit.Name),
                 Command = noteBatchEditCommand,
                 CommandParameter = edit,
-            }).ToList();
-            LyricBatchEdits = new List<BatchEdit>() {
+            }));
+            LyricBatchEdits.AddRange(new List<BatchEdit>() {
                 new RomajiToHiragana(),
                 new HiraganaToRomaji(),
                 new JapaneseVCVtoCV(),
                 new RemoveToneSuffix(),
                 new RemoveLetterSuffix(),
+                new MoveSuffixToVoiceColor(),
+                new RemovePhoneticHint(),
                 new DashToPlus(),
             }.Select(edit => new MenuItemViewModel() {
                 Header = ThemeManager.GetString(edit.Name),
                 Command = noteBatchEditCommand,
                 CommandParameter = edit,
-            }).ToList();
+            }));
             DocManager.Inst.AddSubscriber(this);
         }
 
@@ -186,14 +189,6 @@ namespace OpenUtau.App.ViewModels {
 
         public void MouseoverPhoneme(UPhoneme? phoneme) {
             MessageBus.Current.SendMessage(new PhonemeMouseoverEvent(phoneme));
-        }
-
-        private byte[]? HashFile(string filePath) {
-            using (var md5 = MD5.Create()) {
-                using (var stream = File.OpenRead(filePath)) {
-                    return md5.ComputeHash(stream);
-                }
-            }
         }
 
         #region ICmdSubscriber

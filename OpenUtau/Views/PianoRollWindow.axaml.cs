@@ -1,16 +1,17 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.ComponentModel;
+using System.Linq;
+using System.Reactive;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
-using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Markup.Xaml;
-using Avalonia.VisualTree;
 using OpenUtau.App.Controls;
 using OpenUtau.App.ViewModels;
+using OpenUtau.Core;
+using OpenUtau.Core.Ustx;
+using ReactiveUI;
 using Serilog;
 
 namespace OpenUtau.App.Views {
@@ -28,48 +29,36 @@ namespace OpenUtau.App.Views {
             OS.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control;
         private KeyboardPlayState? keyboardPlayState;
         private NoteEditState? editState;
-        private Rectangle? selectionBox;
-        private Canvas? valueTipCanvas;
-        private Border? valueTip;
-        private TextBlock? valueTipText;
         private Point valueTipPointerPosition;
-        private LyricBox? lyricBox;
-        private ContextMenu? notesContextMenu;
         private bool shouldOpenNotesContextMenu;
-        private ExpSelector? expSelector1;
-        private ExpSelector? expSelector2;
-        private ExpSelector? expSelector3;
-        private ExpSelector? expSelector4;
-        private ExpSelector? expSelector5;
+
+        private ReactiveCommand<Unit, Unit> lyricsDialogCommand;
+        private ReactiveCommand<Unit, Unit> noteDefaultsCommand;
 
         public PianoRollWindow() {
             InitializeComponent();
-#if DEBUG
-            this.AttachDevTools();
-#endif
             DataContext = ViewModel = new PianoRollViewModel();
-        }
+            ValueTip.IsVisible = false;
 
-        private void InitializeComponent() {
-            AvaloniaXamlLoader.Load(this);
-            valueTipCanvas = this.FindControl<Canvas>("ValueTipCanvas");
-            valueTip = this.FindControl<Border>("ValueTip");
-            valueTip.IsVisible = false;
-            valueTipText = this.FindControl<TextBlock>("ValueTipText");
-            lyricBox = this.FindControl<LyricBox>("LyricBox");
-            notesContextMenu = this.FindControl<ContextMenu>("NotesContextMenu");
-            expSelector1 = this.FindControl<ExpSelector>("expSelector1");
-            expSelector2 = this.FindControl<ExpSelector>("expSelector2");
-            expSelector3 = this.FindControl<ExpSelector>("expSelector3");
-            expSelector4 = this.FindControl<ExpSelector>("expSelector4");
-            expSelector5 = this.FindControl<ExpSelector>("expSelector5");
+            ViewModel.LyricBatchEdits.Add(new MenuItemViewModel() {
+                Header = ThemeManager.GetString("lyricsreplace.replace"),
+                Command = ReactiveCommand.Create(() => {
+                    ReplaceLyrics();
+                })
+            });
+            lyricsDialogCommand = ReactiveCommand.Create(() => {
+                EditLyrics();
+            });
+            noteDefaultsCommand = ReactiveCommand.Create(() => {
+                EditNoteDefaults();
+            });
         }
 
         public void WindowDeactivated(object sender, EventArgs args) {
-            lyricBox?.EndEdit();
+            LyricBox?.EndEdit();
         }
 
-        void WindowClosing(object? sender, CancelEventArgs e) {
+        void WindowClosing(object? sender, WindowClosingEventArgs e) {
             Hide();
             e.Cancel = true;
         }
@@ -82,8 +71,46 @@ namespace OpenUtau.App.Views {
             Focus(); // Force unfocus menu for key down events.
         }
 
+        void OnMenuSingers(object sender, RoutedEventArgs args) {
+            MainWindow?.OpenSingersWindow();
+            try {
+                if (ViewModel.NotesViewModel.Part != null && !ViewModel.NotesViewModel.Selection.IsEmpty && ViewModel.NotesViewModel.Part.phonemes.Count() > 0) {
+                    USinger singer = ViewModel.NotesViewModel.Project.tracks[ViewModel.NotesViewModel.Part.trackNo].Singer;
+                    UOto oto = ViewModel.NotesViewModel.Part.phonemes.First(p => p.Parent == ViewModel.NotesViewModel.Selection.First()).oto;
+                    DocManager.Inst.ExecuteCmd(new GotoOtoNotification(singer, oto));
+                }
+            } catch { }
+        }
+
+        void ReplaceLyrics() {
+            if (ViewModel.NotesViewModel.Part == null) {
+                return;
+            }
+            if (ViewModel.NotesViewModel.Selection.IsEmpty) {
+                _ = MessageBox.Show(
+                    this,
+                    ThemeManager.GetString("lyrics.selectnotes"),
+                    ThemeManager.GetString("lyrics.caption"),
+                    MessageBox.MessageBoxButtons.Ok);
+                return;
+            }
+            var (notes, lyrics) = ViewModel.NotesViewModel.PrepareInsertLyrics();
+            var vm = new LyricsReplaceViewModel(ViewModel.NotesViewModel.Part, notes, lyrics);
+            var dialog = new LyricsReplaceDialog() {
+                DataContext = vm,
+            };
+            dialog.ShowDialog(this);
+        }
+
         void OnMenuEditLyrics(object? sender, RoutedEventArgs e) {
-            if (ViewModel.NotesViewModel.SelectedNotes.Count == 0) {
+            EditLyrics();
+        }
+
+        void EditLyrics() {
+            if (ViewModel.NotesViewModel.Part == null) {
+                return;
+            }
+            if (ViewModel.NotesViewModel.Selection.IsEmpty) {
                 _ = MessageBox.Show(
                     this,
                     ThemeManager.GetString("lyrics.selectnotes"),
@@ -101,6 +128,10 @@ namespace OpenUtau.App.Views {
         }
 
         void OnMenuNoteDefaults(object sender, RoutedEventArgs args) {
+            EditNoteDefaults();
+        }
+
+        void EditNoteDefaults() {
             var dialog = new NoteDefaultsDialog();
             dialog.ShowDialog(this);
             if (dialog.Position.Y < 0) {
@@ -119,13 +150,12 @@ namespace OpenUtau.App.Views {
         }
 
         public void KeyboardPointerWheelChanged(object sender, PointerWheelEventArgs args) {
-            lyricBox?.EndEdit();
-            var scrollbar = this.FindControl<ScrollBar>("VScrollBar");
-            VScrollPointerWheelChanged(scrollbar, args);
+            LyricBox?.EndEdit();
+            VScrollPointerWheelChanged(VScrollBar, args);
         }
 
         public void KeyboardPointerPressed(object sender, PointerPressedEventArgs args) {
-            lyricBox?.EndEdit();
+            LyricBox?.EndEdit();
             if (keyboardPlayState != null) {
                 return;
             }
@@ -152,47 +182,47 @@ namespace OpenUtau.App.Views {
         public void HScrollPointerWheelChanged(object sender, PointerWheelEventArgs args) {
             var scrollbar = (ScrollBar)sender;
             scrollbar.Value = Math.Max(scrollbar.Minimum, Math.Min(scrollbar.Maximum, scrollbar.Value - scrollbar.SmallChange * args.Delta.Y));
-            lyricBox?.EndEdit();
+            LyricBox?.EndEdit();
         }
 
         public void VScrollPointerWheelChanged(object sender, PointerWheelEventArgs args) {
             var scrollbar = (ScrollBar)sender;
             scrollbar.Value = Math.Max(scrollbar.Minimum, Math.Min(scrollbar.Maximum, scrollbar.Value - scrollbar.SmallChange * args.Delta.Y));
-            lyricBox?.EndEdit();
+            LyricBox?.EndEdit();
         }
 
         public void TimelinePointerWheelChanged(object sender, PointerWheelEventArgs args) {
-            var canvas = (Canvas)sender;
-            var position = args.GetCurrentPoint((IVisual)sender).Position;
-            var size = canvas.Bounds.Size;
+            var control = (Control)sender;
+            var position = args.GetCurrentPoint((Visual)sender).Position;
+            var size = control.Bounds.Size;
             position = position.WithX(position.X / size.Width).WithY(position.Y / size.Height);
             ViewModel.NotesViewModel.OnXZoomed(position, 0.1 * args.Delta.Y);
-            lyricBox?.EndEdit();
+            LyricBox?.EndEdit();
         }
 
         public void ViewScalerPointerWheelChanged(object sender, PointerWheelEventArgs args) {
             ViewModel.NotesViewModel.OnYZoomed(new Point(0, 0.5), 0.1 * args.Delta.Y);
-            lyricBox?.EndEdit();
+            LyricBox?.EndEdit();
         }
 
         public void TimelinePointerPressed(object sender, PointerPressedEventArgs args) {
-            var canvas = (Canvas)sender;
-            var point = args.GetCurrentPoint(canvas);
+            var control = (Control)sender;
+            var point = args.GetCurrentPoint(control);
             if (point.Properties.IsLeftButtonPressed) {
-                args.Pointer.Capture(canvas);
-                int tick = ViewModel.NotesViewModel.PointToSnappedTick(point.Position)
-                    + ViewModel.NotesViewModel.Part?.position ?? 0;
+                args.Pointer.Capture(control);
+                ViewModel.NotesViewModel.PointToLineTick(point.Position, out int left, out int right);
+                int tick = left + ViewModel.NotesViewModel.Part?.position ?? 0;
                 ViewModel.PlaybackViewModel?.MovePlayPos(tick);
             }
-            lyricBox?.EndEdit();
+            LyricBox?.EndEdit();
         }
 
         public void TimelinePointerMoved(object sender, PointerEventArgs args) {
-            var canvas = (Canvas)sender;
-            var point = args.GetCurrentPoint(canvas);
+            var control = (Control)sender;
+            var point = args.GetCurrentPoint(control);
             if (point.Properties.IsLeftButtonPressed) {
-                int tick = ViewModel.NotesViewModel.PointToSnappedTick(point.Position)
-                    + ViewModel.NotesViewModel.Part?.position ?? 0;
+                ViewModel.NotesViewModel.PointToLineTick(point.Position, out int left, out int right);
+                int tick = left + ViewModel.NotesViewModel.Part?.position ?? 0;
                 ViewModel.PlaybackViewModel?.MovePlayPos(tick);
             }
         }
@@ -202,21 +232,21 @@ namespace OpenUtau.App.Views {
         }
 
         public void NotesCanvasPointerPressed(object sender, PointerPressedEventArgs args) {
-            lyricBox?.EndEdit();
+            LyricBox?.EndEdit();
             if (ViewModel.NotesViewModel.Part == null) {
                 return;
             }
-            var canvas = (Canvas)sender;
-            var point = args.GetCurrentPoint(canvas);
+            var control = (Control)sender;
+            var point = args.GetCurrentPoint(control);
             if (editState != null) {
                 return;
             }
             if (point.Properties.IsLeftButtonPressed) {
-                NotesCanvasLeftPointerPressed(canvas, point, args);
+                NotesCanvasLeftPointerPressed(control, point, args);
             } else if (point.Properties.IsRightButtonPressed) {
-                NotesCanvasRightPointerPressed(canvas, point, args);
+                NotesCanvasRightPointerPressed(control, point, args);
             } else if (point.Properties.IsMiddleButtonPressed) {
-                editState = new NotePanningState(canvas, ViewModel, this);
+                editState = new NotePanningState(control, ViewModel, this);
                 Cursor = ViewConstants.cursorHand;
             }
             if (editState != null) {
@@ -225,21 +255,26 @@ namespace OpenUtau.App.Views {
             }
         }
 
-        private void NotesCanvasLeftPointerPressed(Canvas canvas, PointerPoint point, PointerPressedEventArgs args) {
+        private void NotesCanvasLeftPointerPressed(Control control, PointerPoint point, PointerPressedEventArgs args) {
             if (ViewModel.NotesViewModel.DrawPitchTool) {
                 ViewModel.NotesViewModel.DeselectNotes();
-                editState = new DrawPitchState(canvas, ViewModel, this);
-                return;
+                if (args.KeyModifiers == KeyModifiers.Alt) {
+                    editState = new SmoothenPitchState(control, ViewModel, this);
+                    return;
+                } else if (args.KeyModifiers != cmdKey) {
+                    editState = new DrawPitchState(control, ViewModel, this);
+                    return;
+                }
             }
             if (ViewModel.NotesViewModel.EraserTool) {
                 ViewModel.NotesViewModel.DeselectNotes();
-                editState = new NoteEraseEditState(canvas, ViewModel, this, MouseButton.Left);
+                editState = new NoteEraseEditState(control, ViewModel, this, MouseButton.Left);
                 Cursor = ViewConstants.cursorNo;
                 return;
             }
             var pitHitInfo = ViewModel.NotesViewModel.HitTest.HitTestPitchPoint(point.Position);
             if (pitHitInfo.Note != null) {
-                editState = new PitchPointEditState(canvas, ViewModel, this,
+                editState = new PitchPointEditState(control, ViewModel, this,
                     pitHitInfo.Note, pitHitInfo.Index, pitHitInfo.OnPoint, pitHitInfo.X, pitHitInfo.Y);
                 return;
             }
@@ -250,28 +285,28 @@ namespace OpenUtau.App.Views {
                     return;
                 }
                 if (vbrHitInfo.hitStart) {
-                    editState = new VibratoChangeStartState(canvas, ViewModel, this, vbrHitInfo.note);
+                    editState = new VibratoChangeStartState(control, ViewModel, this, vbrHitInfo.note);
                     return;
                 }
                 if (vbrHitInfo.hitIn) {
-                    editState = new VibratoChangeInState(canvas, ViewModel, this, vbrHitInfo.note);
+                    editState = new VibratoChangeInState(control, ViewModel, this, vbrHitInfo.note);
                     return;
                 }
                 if (vbrHitInfo.hitOut) {
-                    editState = new VibratoChangeOutState(canvas, ViewModel, this, vbrHitInfo.note);
+                    editState = new VibratoChangeOutState(control, ViewModel, this, vbrHitInfo.note);
                     return;
                 }
                 if (vbrHitInfo.hitDepth) {
-                    editState = new VibratoChangeDepthState(canvas, ViewModel, this, vbrHitInfo.note);
+                    editState = new VibratoChangeDepthState(control, ViewModel, this, vbrHitInfo.note);
                     return;
                 }
                 if (vbrHitInfo.hitPeriod) {
-                    editState = new VibratoChangePeriodState(canvas, ViewModel, this, vbrHitInfo.note);
+                    editState = new VibratoChangePeriodState(control, ViewModel, this, vbrHitInfo.note);
                     return;
                 }
                 if (vbrHitInfo.hitShift) {
                     editState = new VibratoChangeShiftState(
-                        canvas, ViewModel, this, vbrHitInfo.note, vbrHitInfo.point, vbrHitInfo.initialShift);
+                        control, ViewModel, this, vbrHitInfo.note, vbrHitInfo.point, vbrHitInfo.initialShift);
                     return;
                 }
                 return;
@@ -281,33 +316,38 @@ namespace OpenUtau.App.Views {
                 if (ViewModel.NotesViewModel.KnifeTool) {
                     ViewModel.NotesViewModel.DeselectNotes();
                     editState = new NoteSplitEditState(
-                            canvas, ViewModel, this, noteHitInfo.note);
+                            control, ViewModel, this, noteHitInfo.note);
                     return;
                 }
                 if (noteHitInfo.hitResizeArea) {
                     editState = new NoteResizeEditState(
-                        canvas, ViewModel, this, noteHitInfo.note,
+                        control, ViewModel, this, noteHitInfo.note,
                         args.KeyModifiers == KeyModifiers.Alt);
                     Cursor = ViewConstants.cursorSizeWE;
+                } else if (args.KeyModifiers == cmdKey) {
+                    ViewModel.NotesViewModel.ToggleSelectNote(noteHitInfo.note);
+                } else if (args.KeyModifiers == KeyModifiers.Shift) {
+                    ViewModel.NotesViewModel.SelectNotesUntil(noteHitInfo.note);
                 } else {
-                    editState = new NoteMoveEditState(canvas, ViewModel, this, noteHitInfo.note);
+                    editState = new NoteMoveEditState(control, ViewModel, this, noteHitInfo.note);
                     Cursor = ViewConstants.cursorSizeAll;
                 }
                 return;
             }
             if (ViewModel.NotesViewModel.CursorTool ||
                 ViewModel.NotesViewModel.PenTool && args.KeyModifiers == cmdKey ||
-                ViewModel.NotesViewModel.PenPlusTool && args.KeyModifiers == cmdKey) {
+                ViewModel.NotesViewModel.PenPlusTool && args.KeyModifiers == cmdKey ||
+                ViewModel.NotesViewModel.DrawPitchTool && args.KeyModifiers == cmdKey) {
                 if (args.KeyModifiers == KeyModifiers.None) {
                     // New selection.
                     ViewModel.NotesViewModel.DeselectNotes();
-                    editState = new NoteSelectionEditState(canvas, ViewModel, this, GetSelectionBox(canvas));
+                    editState = new NoteSelectionEditState(control, ViewModel, this, SelectionBox);
                     Cursor = ViewConstants.cursorCross;
                     return;
                 }
                 if (args.KeyModifiers == cmdKey) {
                     // Additional selection.
-                    editState = new NoteSelectionEditState(canvas, ViewModel, this, GetSelectionBox(canvas));
+                    editState = new NoteSelectionEditState(control, ViewModel, this, SelectionBox);
                     Cursor = ViewConstants.cursorCross;
                     return;
                 }
@@ -315,89 +355,128 @@ namespace OpenUtau.App.Views {
             } else if (ViewModel.NotesViewModel.PenTool ||
                 ViewModel.NotesViewModel.PenPlusTool) {
                 ViewModel.NotesViewModel.DeselectNotes();
-                editState = new NoteDrawEditState(canvas, ViewModel, this, ViewModel.NotesViewModel.PlayTone);
+                editState = new NoteDrawEditState(control, ViewModel, this, ViewModel.NotesViewModel.PlayTone);
             }
         }
 
-        private void NotesCanvasRightPointerPressed(Canvas canvas, PointerPoint point, PointerPressedEventArgs args) {
-            var selectedNotes = new List<Core.Ustx.UNote>(ViewModel.NotesViewModel.SelectedNotes);
-            ViewModel.NotesViewModel.DeselectNotes();
+        private void NotesCanvasRightPointerPressed(Control control, PointerPoint point, PointerPressedEventArgs args) {
+            var selectedNotes = ViewModel.NotesViewModel.Selection.ToList();
             if (ViewModel.NotesViewModel.DrawPitchTool) {
-                editState = new ResetPitchState(canvas, ViewModel, this);
+                editState = new ResetPitchState(control, ViewModel, this);
                 return;
             }
             if (ViewModel.NotesViewModel.ShowPitch) {
                 var pitHitInfo = ViewModel.NotesViewModel.HitTest.HitTestPitchPoint(point.Position);
-                if (pitHitInfo.Note != null && notesContextMenu != null) {
-                    notesContextMenu.DataContext = new NotesContextMenuArgs {
-                        ForPitchPoint = true,
-                        PitchPointIsFirst = pitHitInfo.OnPoint && pitHitInfo.Index == 0,
-                        PitchPointCanDel = pitHitInfo.OnPoint && pitHitInfo.Index != 0
-                            && pitHitInfo.Index != pitHitInfo.Note.pitch.data.Count - 1,
-                        PitchPointCanAdd = !pitHitInfo.OnPoint,
-                        PitchPointHitInfo = pitHitInfo,
-                        PitchPointEaseInOutCommand = ViewModel.PitEaseInOutCommand,
-                        PitchPointLinearCommand = ViewModel.PitLinearCommand,
-                        PitchPointEaseInCommand = ViewModel.PitEaseInCommand,
-                        PitchPointEaseOutCommand = ViewModel.PitEaseOutCommand,
-                        PitchPointSnapCommand = ViewModel.PitSnapCommand,
-                        PitchPointAddCommand = ViewModel.PitAddCommand,
-                        PitchPointDelCommand = ViewModel.PitDelCommand,
-                    };
+                if (pitHitInfo.Note != null) {
+                    ViewModel.NotesContextMenuItems.Add(new MenuItemViewModel() {
+                        Header = ThemeManager.GetString("context.pitch.easeinout"),
+                        Command = ViewModel.PitEaseInOutCommand,
+                        CommandParameter = pitHitInfo,
+                    });
+                    ViewModel.NotesContextMenuItems.Add(new MenuItemViewModel() {
+                        Header = ThemeManager.GetString("context.pitch.linear"),
+                        Command = ViewModel.PitLinearCommand,
+                        CommandParameter = pitHitInfo,
+                    });
+                    ViewModel.NotesContextMenuItems.Add(new MenuItemViewModel() {
+                        Header = ThemeManager.GetString("context.pitch.easein"),
+                        Command = ViewModel.PitEaseInCommand,
+                        CommandParameter = pitHitInfo,
+                    });
+                    ViewModel.NotesContextMenuItems.Add(new MenuItemViewModel() {
+                        Header = ThemeManager.GetString("context.pitch.easeout"),
+                        Command = ViewModel.PitEaseOutCommand,
+                        CommandParameter = pitHitInfo,
+                    });
+                    if (pitHitInfo.OnPoint && pitHitInfo.Index == 0) {
+                        ViewModel.NotesContextMenuItems.Add(new MenuItemViewModel() {
+                            Header = ThemeManager.GetString("context.pitch.pointsnapprev"),
+                            Command = ViewModel.PitSnapCommand,
+                            CommandParameter = pitHitInfo,
+                        });
+                    }
+                    if (pitHitInfo.OnPoint && pitHitInfo.Index != 0 &&
+                        pitHitInfo.Index != pitHitInfo.Note.pitch.data.Count - 1) {
+                        ViewModel.NotesContextMenuItems.Add(new MenuItemViewModel() {
+                            Header = ThemeManager.GetString("context.pitch.pointdel"),
+                            Command = ViewModel.PitDelCommand,
+                            CommandParameter = pitHitInfo,
+                        });
+                    }
+                    if (!pitHitInfo.OnPoint) {
+                        ViewModel.NotesContextMenuItems.Add(new MenuItemViewModel() {
+                            Header = ThemeManager.GetString("context.pitch.pointadd"),
+                            Command = ViewModel.PitAddCommand,
+                            CommandParameter = pitHitInfo,
+                        });
+                    }
                     shouldOpenNotesContextMenu = true;
                     return;
                 }
             }
             if (ViewModel.NotesViewModel.CursorTool || ViewModel.NotesViewModel.PenTool) {
                 var hitInfo = ViewModel.NotesViewModel.HitTest.HitTestNote(point.Position);
-                if (hitInfo.hitBody) {
-                    if (selectedNotes.Contains(hitInfo.note)) {
-                        ViewModel.NotesViewModel.SelectedNotes.AddRange(selectedNotes);
+                var vibHitInfo = ViewModel.NotesViewModel.HitTest.HitTestVibrato(point.Position);
+                if ((hitInfo.hitBody && hitInfo.note != null) || vibHitInfo.hit) {
+                    if (hitInfo.note != null && !selectedNotes.Contains(hitInfo.note)) {
+                        ViewModel.NotesViewModel.DeselectNotes();
+                        ViewModel.NotesViewModel.SelectNote(hitInfo.note, false);
                     }
-                    ViewModel.NotesViewModel.SelectNote(hitInfo.note);
-                }
-                if (ViewModel.NotesViewModel.SelectedNotes.Count > 0) {
-                    if (notesContextMenu != null) {
-                        notesContextMenu.DataContext = new NotesContextMenuArgs {
-                            ForNote = true,
-                            NoteDeleteCommand = ViewModel.NoteDeleteCommand,
-                        };
+                    if (ViewModel.NotesViewModel.Selection.Count > 0) {
+                        ViewModel.NotesContextMenuItems.Add(new MenuItemViewModel() {
+                            Header = ThemeManager.GetString("context.note.copy"),
+                            Command = ViewModel.NoteCopyCommand,
+                            CommandParameter = hitInfo,
+                        });
+                        ViewModel.NotesContextMenuItems.Add(new MenuItemViewModel() {
+                            Header = ThemeManager.GetString("context.note.delete"),
+                            Command = ViewModel.NoteDeleteCommand,
+                            CommandParameter = hitInfo,
+                        });
+                        ViewModel.NotesContextMenuItems.Add(new MenuItemViewModel() {
+                            Header = ThemeManager.GetString("pianoroll.menu.notes"),
+                            Items = ViewModel.NoteBatchEdits.ToArray(),
+                        });
+                        ViewModel.NotesContextMenuItems.Add(new MenuItemViewModel() {
+                            Header = ThemeManager.GetString("pianoroll.menu.lyrics"),
+                            Items = ViewModel.LyricBatchEdits.ToArray(),
+                        });
+                        ViewModel.NotesContextMenuItems.Add(new MenuItemViewModel() {
+                            Header = ThemeManager.GetString("pianoroll.menu.lyrics.edit"),
+                            Command = lyricsDialogCommand,
+                        });
+                        ViewModel.NotesContextMenuItems.Add(new MenuItemViewModel() {
+                            Header = ThemeManager.GetString("pianoroll.menu.notedefaults"),
+                            Command = noteDefaultsCommand,
+                        });
                         shouldOpenNotesContextMenu = true;
+                        return;
                     }
+                } else {
+                    ViewModel.NotesViewModel.DeselectNotes();
                 }
             } else if (ViewModel.NotesViewModel.EraserTool || ViewModel.NotesViewModel.PenPlusTool) {
-                editState = new NoteEraseEditState(canvas, ViewModel, this, MouseButton.Right);
+                ViewModel.NotesViewModel.DeselectNotes();
+                editState = new NoteEraseEditState(control, ViewModel, this, MouseButton.Right);
                 Cursor = ViewConstants.cursorNo;
             }
         }
 
-        private Rectangle GetSelectionBox(Canvas canvas) {
-            if (selectionBox != null) {
-                return selectionBox;
-            }
-            selectionBox = new Rectangle() {
-                Stroke = ThemeManager.ForegroundBrush,
-                StrokeThickness = 2,
-                Fill = ThemeManager.TickLineBrushLow,
-                // radius = 8
-                IsHitTestVisible = false,
-            };
-            canvas.Children.Add(selectionBox);
-            selectionBox.ZIndex = 1000;
-            return selectionBox;
-        }
-
         public void NotesCanvasPointerMoved(object sender, PointerEventArgs args) {
-            var canvas = (Canvas)sender;
-            var point = args.GetCurrentPoint(canvas);
-            if (valueTipCanvas != null) {
-                valueTipPointerPosition = args.GetCurrentPoint(valueTipCanvas!).Position;
+            var control = (Control)sender;
+            var point = args.GetCurrentPoint(control);
+            if (ValueTipCanvas != null) {
+                valueTipPointerPosition = args.GetCurrentPoint(ValueTipCanvas!).Position;
             }
             if (editState != null) {
                 editState.Update(point.Pointer, point.Position);
                 return;
             }
             if (ViewModel?.NotesViewModel?.HitTest == null) {
+                return;
+            }
+            if((ViewModel.NotesViewModel.DrawPitchTool && args.KeyModifiers != cmdKey) || ViewModel.NotesViewModel.EraserTool) {
+                Cursor = null;
                 return;
             }
             var pitHitInfo = ViewModel.NotesViewModel.HitTest.HitTestPitchPoint(point.Position);
@@ -431,55 +510,58 @@ namespace OpenUtau.App.Views {
             if (editState.MouseButton != args.InitialPressMouseButton) {
                 return;
             }
-            var canvas = (Canvas)sender;
-            var point = args.GetCurrentPoint(canvas);
+            var control = (Control)sender;
+            var point = args.GetCurrentPoint(control);
             editState.Update(point.Pointer, point.Position);
             editState.End(point.Pointer, point.Position);
             editState = null;
             Cursor = null;
         }
 
-        public void NotesCanvasDoubleTapped(object sender, RoutedEventArgs args) {
-            if (!(sender is Canvas canvas)) {
+        public void NotesCanvasDoubleTapped(object sender, TappedEventArgs args) {
+            if (!(sender is Control control)) {
                 return;
             }
-            var e = (TappedEventArgs)args;
-            var point = e.GetPosition(canvas);
+            var point = args.GetPosition(control);
             if (editState != null) {
-                editState.End(e.Pointer, point);
+                editState.End(args.Pointer, point);
                 editState = null;
                 Cursor = null;
             }
             var noteHitInfo = ViewModel.NotesViewModel.HitTest.HitTestNote(point);
             if (noteHitInfo.hitBody && ViewModel?.NotesViewModel?.Part != null) {
                 var note = noteHitInfo.note;
-                lyricBox?.Show(ViewModel.NotesViewModel.Part, new LyricBoxNote(note), note.lyric);
+                LyricBox?.Show(ViewModel.NotesViewModel.Part, new LyricBoxNote(note), note.lyric);
             }
         }
 
         public void NotesCanvasPointerWheelChanged(object sender, PointerWheelEventArgs args) {
-            lyricBox?.EndEdit();
-            var canvas = (Canvas)sender;
-            var position = args.GetCurrentPoint(canvas).Position;
-            var size = canvas.Bounds.Size;
+            LyricBox?.EndEdit();
+            var control = (Control)sender;
+            var position = args.GetCurrentPoint(control).Position;
+            var size = control.Bounds.Size;
             var delta = args.Delta;
             if (args.KeyModifiers == KeyModifiers.None || args.KeyModifiers == KeyModifiers.Shift) {
+                if (args.KeyModifiers == KeyModifiers.Shift) {
+                    delta = new Vector(delta.Y, delta.X);
+                }
                 if (delta.X != 0) {
-                    var scrollbar = this.FindControl<ScrollBar>("HScrollBar");
-                    scrollbar.Value = Math.Max(scrollbar.Minimum,
-                        Math.Min(scrollbar.Maximum, scrollbar.Value - scrollbar.SmallChange * delta.X));
+                    HScrollBar.Value = Math.Max(HScrollBar.Minimum,
+                        Math.Min(HScrollBar.Maximum, HScrollBar.Value - HScrollBar.SmallChange * delta.X));
                 }
                 if (delta.Y != 0) {
-                    var scrollbar = this.FindControl<ScrollBar>("VScrollBar");
-                    scrollbar.Value = Math.Max(scrollbar.Minimum,
-                        Math.Min(scrollbar.Maximum, scrollbar.Value - scrollbar.SmallChange * delta.Y));
+                    VScrollBar.Value = Math.Max(VScrollBar.Minimum,
+                        Math.Min(VScrollBar.Maximum, VScrollBar.Value - VScrollBar.SmallChange * delta.Y));
                 }
             } else if (args.KeyModifiers == KeyModifiers.Alt) {
                 position = position.WithX(position.X / size.Width).WithY(position.Y / size.Height);
                 ViewModel.NotesViewModel.OnYZoomed(position, 0.1 * args.Delta.Y);
             } else if (args.KeyModifiers == cmdKey) {
-                var timelineCanvas = this.FindControl<Canvas>("TimelineCanvas");
-                TimelinePointerWheelChanged(timelineCanvas, args);
+                TimelinePointerWheelChanged(TimelineCanvas, args);
+            }
+            if (editState != null) {
+                var point = args.GetCurrentPoint(editState.control);
+                editState.Update(point.Pointer, point.Position);
             }
         }
 
@@ -492,41 +574,39 @@ namespace OpenUtau.App.Views {
         }
 
         public void NotesContextMenuClosing(object sender, CancelEventArgs args) {
-            if (notesContextMenu != null) {
-                notesContextMenu.DataContext = null;
-            }
+            ViewModel.NotesContextMenuItems?.Clear();
         }
 
         public void ExpCanvasPointerPressed(object sender, PointerPressedEventArgs args) {
-            lyricBox?.EndEdit();
+            LyricBox?.EndEdit();
             if (ViewModel.NotesViewModel.Part == null) {
                 return;
             }
-            var canvas = (Canvas)sender;
-            var point = args.GetCurrentPoint(canvas);
+            var control = (Control)sender;
+            var point = args.GetCurrentPoint(control);
             if (editState != null) {
                 return;
             }
             if (point.Properties.IsLeftButtonPressed) {
-                editState = new ExpSetValueState(canvas, ViewModel, this);
+                editState = new ExpSetValueState(control, ViewModel, this);
             } else if (point.Properties.IsRightButtonPressed) {
-                editState = new ExpResetValueState(canvas, ViewModel, this);
+                editState = new ExpResetValueState(control, ViewModel, this);
                 Cursor = ViewConstants.cursorNo;
             }
             if (editState != null) {
                 editState.Begin(point.Pointer, point.Position);
-                editState.Update(point.Pointer, point.Position);
+                editState.Update(point.Pointer, point.Position, args);
             }
         }
 
         public void ExpCanvasPointerMoved(object sender, PointerEventArgs args) {
-            var canvas = (Canvas)sender;
-            var point = args.GetCurrentPoint(canvas);
-            if (valueTipCanvas != null) {
-                valueTipPointerPosition = args.GetCurrentPoint(valueTipCanvas!).Position;
+            var control = (Control)sender;
+            var point = args.GetCurrentPoint(control);
+            if (ValueTipCanvas != null) {
+                valueTipPointerPosition = args.GetCurrentPoint(ValueTipCanvas!).Position;
             }
             if (editState != null) {
-                editState.Update(point.Pointer, point.Position);
+                editState.Update(point.Pointer, point.Position, args);
             } else {
                 Cursor = null;
             }
@@ -539,25 +619,24 @@ namespace OpenUtau.App.Views {
             if (editState.MouseButton != args.InitialPressMouseButton) {
                 return;
             }
-            var canvas = (Canvas)sender;
-            var point = args.GetCurrentPoint(canvas);
-            editState.Update(point.Pointer, point.Position);
+            var control = (Control)sender;
+            var point = args.GetCurrentPoint(control);
+            editState.Update(point.Pointer, point.Position, args);
             editState.End(point.Pointer, point.Position);
             editState = null;
             Cursor = null;
         }
 
-        public void PhonemeCanvasDoubleTapped(object sender, RoutedEventArgs args) {
+        public void PhonemeCanvasDoubleTapped(object sender, TappedEventArgs args) {
             if (ViewModel?.NotesViewModel?.Part == null) {
                 return;
             }
-            if (sender is not Canvas canvas) {
+            if (sender is not Control control) {
                 return;
             }
-            var e = (TappedEventArgs)args;
-            var point = e.GetPosition(canvas);
+            var point = args.GetPosition(control);
             if (editState != null) {
-                editState.End(e.Pointer, point);
+                editState.End(args.Pointer, point);
                 editState = null;
                 Cursor = null;
             }
@@ -567,26 +646,30 @@ namespace OpenUtau.App.Views {
             if (!hitInfo.hit) {
                 return;
             }
-            lyricBox?.Show(ViewModel.NotesViewModel.Part, new LyricBoxPhoneme(phoneme!), phoneme!.phoneme);
+            LyricBox?.Show(ViewModel.NotesViewModel.Part, new LyricBoxPhoneme(phoneme!), phoneme!.phoneme);
         }
 
         public void PhonemeCanvasPointerPressed(object sender, PointerPressedEventArgs args) {
-            lyricBox?.EndEdit();
+            LyricBox?.EndEdit();
             if (ViewModel?.NotesViewModel?.Part == null) {
                 return;
             }
-            var canvas = (Canvas)sender;
-            var point = args.GetCurrentPoint(canvas);
+            var control = (Control)sender;
+            var point = args.GetCurrentPoint(control);
             if (editState != null) {
                 return;
             }
             if (point.Properties.IsLeftButtonPressed) {
                 if (args.KeyModifiers == cmdKey) {
-                    var hitAliasInfo = ViewModel.NotesViewModel.HitTest.HitTestAlias(args.GetPosition(canvas));
+                    var hitAliasInfo = ViewModel.NotesViewModel.HitTest.HitTestAlias(args.GetPosition(control));
                     if (hitAliasInfo.hit) {
                         var singer = ViewModel.NotesViewModel.Project.tracks[ViewModel.NotesViewModel.Part.trackNo].Singer;
-                        MainWindow?.OpenSingersWindow();
-                        Core.DocManager.Inst.ExecuteCmd(new Core.GotoOtoNotification(singer, hitAliasInfo.phoneme.oto));
+                        if (Core.Util.Preferences.Default.OtoEditor == 1 && !string.IsNullOrEmpty(Core.Util.Preferences.Default.VLabelerPath)) {
+                            Integrations.VLabelerClient.Inst.GotoOto(singer, hitAliasInfo.phoneme.oto);
+                        } else {
+                            MainWindow?.OpenSingersWindow();
+                            Core.DocManager.Inst.ExecuteCmd(new Core.GotoOtoNotification(singer, hitAliasInfo.phoneme.oto));
+                        }
                         return;
                     }
                 }
@@ -597,17 +680,17 @@ namespace OpenUtau.App.Views {
                     var index = phoneme.index;
                     if (hitInfo.hitPosition) {
                         editState = new PhonemeMoveState(
-                            canvas, ViewModel, this, note.Extends ?? note, index);
+                            control, ViewModel, this, note.Extends ?? note, phoneme, index);
                     } else if (hitInfo.hitPreutter) {
                         editState = new PhonemeChangePreutterState(
-                            canvas, ViewModel, this, note.Extends ?? note, phoneme, index);
+                            control, ViewModel, this, note.Extends ?? note, phoneme, index);
                     } else if (hitInfo.hitOverlap) {
                         editState = new PhonemeChangeOverlapState(
-                            canvas, ViewModel, this, note.Extends ?? note, phoneme, index);
+                            control, ViewModel, this, note.Extends ?? note, phoneme, index);
                     }
                 }
             } else if (point.Properties.IsRightButtonPressed) {
-                editState = new PhonemeResetState(canvas, ViewModel, this);
+                editState = new PhonemeResetState(control, ViewModel, this);
                 Cursor = ViewConstants.cursorNo;
             }
             if (editState != null) {
@@ -620,11 +703,11 @@ namespace OpenUtau.App.Views {
             if (ViewModel?.NotesViewModel?.Part == null) {
                 return;
             }
-            if (valueTipCanvas != null) {
-                valueTipPointerPosition = args.GetCurrentPoint(valueTipCanvas!).Position;
+            if (ValueTipCanvas != null) {
+                valueTipPointerPosition = args.GetCurrentPoint(ValueTipCanvas!).Position;
             }
-            var canvas = (Canvas)sender;
-            var point = args.GetCurrentPoint(canvas);
+            var control = (Control)sender;
+            var point = args.GetCurrentPoint(control);
             if (editState != null) {
                 editState.Update(point.Pointer, point.Position);
                 return;
@@ -652,138 +735,580 @@ namespace OpenUtau.App.Views {
             if (editState.MouseButton != args.InitialPressMouseButton) {
                 return;
             }
-            var canvas = (Canvas)sender;
-            var point = args.GetCurrentPoint(canvas);
+            var control = (Control)sender;
+            var point = args.GetCurrentPoint(control);
             editState.Update(point.Pointer, point.Position);
             editState.End(point.Pointer, point.Position);
             editState = null;
             Cursor = null;
         }
 
-        public void OnSnapUnitMenuButton(object sender, RoutedEventArgs args) {
-            var menu = this.FindControl<ContextMenu>("SnapUnitMenu");
-            menu.PlacementTarget = sender as Button;
-            menu.Open();
+        public void OnSnapDivMenuButton(object sender, RoutedEventArgs args) {
+            SnapDivMenu.PlacementTarget = sender as Button;
+            SnapDivMenu.Open();
+        }
+
+        void OnSnapDivKeyDown(object sender, KeyEventArgs e) {
+            if (e.Key == Key.Enter && e.KeyModifiers == KeyModifiers.None) {
+                if (sender is ContextMenu menu && menu.SelectedItem is MenuItemViewModel item) {
+                    item.Command?.Execute(item.CommandParameter);
+                }
+            }
         }
 
         #region value tip
 
         void IValueTip.ShowValueTip() {
-            if (valueTip != null) {
-                valueTip.IsVisible = true;
+            if (ValueTip != null) {
+                ValueTip.IsVisible = true;
             }
         }
 
         void IValueTip.HideValueTip() {
-            if (valueTip != null) {
-                valueTip.IsVisible = false;
+            if (ValueTip != null) {
+                ValueTip.IsVisible = false;
             }
-            if (valueTipText != null) {
-                valueTipText.Text = string.Empty;
+            if (ValueTipText != null) {
+                ValueTipText.Text = string.Empty;
             }
         }
 
         void IValueTip.UpdateValueTip(string text) {
-            if (valueTip == null || valueTipText == null || valueTipCanvas == null) {
+            if (ValueTip == null || ValueTipText == null || ValueTipCanvas == null) {
                 return;
             }
-            valueTipText.Text = text;
-            Canvas.SetLeft(valueTip, valueTipPointerPosition.X);
+            ValueTipText.Text = text;
+            Canvas.SetLeft(ValueTip, valueTipPointerPosition.X);
             double tipY = valueTipPointerPosition.Y + 21;
-            if (tipY + 21 > valueTipCanvas!.Bounds.Height) {
+            if (tipY + 21 > ValueTipCanvas!.Bounds.Height) {
                 tipY = tipY - 42;
             }
-            Canvas.SetTop(valueTip, tipY);
+            Canvas.SetTop(ValueTip, tipY);
         }
 
         #endregion
 
         void OnKeyDown(object sender, KeyEventArgs args) {
-            if (lyricBox != null && lyricBox.IsVisible) {
+            if (LyricBox != null && LyricBox.IsVisible) {
                 args.Handled = false;
                 return;
             }
             var notesVm = ViewModel.NotesViewModel;
             if (notesVm.Part == null) {
+                args.Handled = false;
                 return;
             }
-            if (args.KeyModifiers == KeyModifiers.None) {
-                switch (args.Key) {
-                    case Key.Back:
-                    case Key.Delete:
-                        notesVm.DeleteSelectedNotes();
-                        args.Handled = true;
-                        break;
-                    case Key.D1: notesVm.SelectToolCommand?.Execute("1").Subscribe(); args.Handled = true; break;
-                    case Key.D2: notesVm.SelectToolCommand?.Execute("2").Subscribe(); args.Handled = true; break;
-                    case Key.D3: notesVm.SelectToolCommand?.Execute("3").Subscribe(); args.Handled = true; break;
-                    case Key.D4: notesVm.SelectToolCommand?.Execute("4").Subscribe(); args.Handled = true; break;
-                    case Key.D5: notesVm.SelectToolCommand?.Execute("5").Subscribe(); args.Handled = true; break;
-                    case Key.R: notesVm.ShowFinalPitch = !notesVm.ShowFinalPitch; args.Handled = true; break;
-                    case Key.T: notesVm.ShowTips = !notesVm.ShowTips; args.Handled = true; break;
-                    case Key.Y: notesVm.PlayTone = !notesVm.PlayTone; args.Handled = true; break;
-                    case Key.U: notesVm.ShowVibrato = !notesVm.ShowVibrato; args.Handled = true; break;
-                    case Key.I: notesVm.ShowPitch = !notesVm.ShowPitch; args.Handled = true; break;
-                    case Key.O: notesVm.ShowPhoneme = !notesVm.ShowPhoneme; args.Handled = true; break;
-                    case Key.W: notesVm.ShowWaveform = !notesVm.ShowWaveform; args.Handled = true; break;
-                    case Key.P: notesVm.IsSnapOn = !notesVm.IsSnapOn; args.Handled = true; break;
-                    case Key.Up: notesVm.TransposeSelection(1); args.Handled = true; break;
-                    case Key.Down: notesVm.TransposeSelection(-1); args.Handled = true; break;
-                    case Key.Space:
-                        if (ViewModel.PlaybackViewModel != null &&
-                            !ViewModel.PlaybackViewModel.PlayOrPause()) {
-                            MessageBox.Show(
-                               this,
-                               ThemeManager.GetString("dialogs.noresampler.message"),
-                               ThemeManager.GetString("dialogs.noresampler.caption"),
-                               MessageBox.MessageBoxButtons.Ok);
+
+            // returns true if handled
+            args.Handled = OnKeyExtendedHandler(args);
+        }
+
+        bool OnKeyExtendedHandler(KeyEventArgs args) {
+            var notesVm = ViewModel.NotesViewModel;
+            var playVm = ViewModel.PlaybackViewModel;
+            if (notesVm?.Part == null || playVm == null) {
+                return false;
+            }
+            var project = Core.DocManager.Inst.Project;
+            int snapUnit = project.resolution * 4 / notesVm.SnapDiv;
+            int deltaTicks = notesVm.IsSnapOn ? snapUnit : 15;
+
+            bool isNone = args.KeyModifiers == KeyModifiers.None;
+            bool isAlt = args.KeyModifiers == KeyModifiers.Alt;
+            bool isCtrl = args.KeyModifiers == cmdKey;
+            bool isShift = args.KeyModifiers == KeyModifiers.Shift;
+            bool isBoth = args.KeyModifiers == (cmdKey | KeyModifiers.Shift);
+
+            switch (args.Key) {
+                #region document keys
+                case Key.Space:
+                    if (isNone) {
+                        try {
+                            playVm.PlayOrPause();
+                        } catch (Exception e) {
+                            MessageBox.ShowError(this, e);
                         }
-                        args.Handled = true;
-                        break;
-                    case Key.Home:
-                        if (ViewModel.NotesViewModel.Part != null) {
-                            ViewModel.PlaybackViewModel?.MovePlayPos(ViewModel.NotesViewModel.Part.position);
+                        return true;
+                    }
+                    break;
+                case Key.Escape:
+                    if (isNone) {
+                        // collapse/empty selection
+                        var numSelected = notesVm.Selection.Count;
+                        // if single or all notes then clear
+                        if (numSelected == 1 || numSelected == notesVm.Part.notes.Count) {
+                            notesVm.DeselectNotes();
+                        } else if (numSelected > 1) {
+                            // collapse selection
+                            notesVm.SelectNote(notesVm.Selection.Head!);
                         }
-                        break;
-                    case Key.End:
-                        if (ViewModel.NotesViewModel.Part != null) {
-                            ViewModel.PlaybackViewModel?.MovePlayPos(ViewModel.NotesViewModel.Part.EndTick);
-                        }
-                        break;
-                    default: break;
-                }
-            } else if (args.KeyModifiers == cmdKey) {
-                switch (args.Key) {
-                    case Key.D2: notesVm.SelectToolCommand?.Execute("2+").Subscribe(); args.Handled = true; break;
-                    case Key.A: notesVm.SelectAllNotes(); args.Handled = true; break;
-                    case Key.S: _ = MainWindow?.Save(); args.Handled = true; break;
-                    case Key.Z: ViewModel.Undo(); args.Handled = true; break;
-                    case Key.Y: ViewModel.Redo(); args.Handled = true; break;
-                    case Key.C: notesVm.CopyNotes(); args.Handled = true; break;
-                    case Key.X: notesVm.CutNotes(); args.Handled = true; break;
-                    case Key.V: notesVm.PasteNotes(); args.Handled = true; break;
-                    case Key.Up: notesVm.TransposeSelection(12); args.Handled = true; break;
-                    case Key.Down: notesVm.TransposeSelection(-12); args.Handled = true; break;
-                    default: break;
-                }
-            } else if (args.KeyModifiers == (cmdKey | KeyModifiers.Shift)) {
-                switch (args.Key) {
-                    case Key.Z: ViewModel.Redo(); args.Handled = true; break;
-                    default: break;
-                }
-            } else if (args.KeyModifiers == KeyModifiers.Alt) {
-                switch (args.Key) {
-                    case Key.D1: expSelector1?.SelectExp(); args.Handled = true; break;
-                    case Key.D2: expSelector2?.SelectExp(); args.Handled = true; break;
-                    case Key.D3: expSelector3?.SelectExp(); args.Handled = true; break;
-                    case Key.D4: expSelector4?.SelectExp(); args.Handled = true; break;
-                    case Key.D5: expSelector5?.SelectExp(); args.Handled = true; break;
-                    case Key.F4:
+                        return true;
+                    }
+                    break;
+                case Key.F4:
+                    if (isAlt) {
                         Hide();
-                        args.Handled = true;
-                        break;
-                    default:
-                        break;
+                        return true;
+                    }
+                    break;
+                case Key.Enter:
+                    if (isNone) {
+                        if (notesVm.Selection.Count == 1) {
+                            var note = notesVm.Selection.First();
+                            LyricBox?.Show(ViewModel.NotesViewModel.Part!, new LyricBoxNote(note), note.lyric);
+                        } else if (notesVm.Selection.Count > 1) {
+                            EditLyrics();
+                        }
+                        return true;
+                    }
+                    break;
+                #endregion
+                #region tool select keys
+                // TOOL SELECT
+                case Key.D1:
+                    if (isNone) {
+                        notesVm.SelectToolCommand?.Execute("1").Subscribe();
+                        return true;
+                    }
+                    if (isAlt) {
+                        expSelector1?.SelectExp();
+                        return true;
+                    }
+                    break;
+                case Key.D2:
+                    if (isNone) {
+                        notesVm.SelectToolCommand?.Execute("2").Subscribe();
+                        return true;
+                    }
+                    if (isAlt) {
+                        expSelector2?.SelectExp();
+                        return true;
+                    }
+                    if (isCtrl) {
+                        notesVm.SelectToolCommand?.Execute("2+").Subscribe();
+                        return true;
+                    }
+                    break;
+                case Key.D3:
+                    if (isNone) {
+                        notesVm.SelectToolCommand?.Execute("3").Subscribe();
+                        return true;
+                    }
+                    if (isAlt) {
+                        expSelector3?.SelectExp();
+                        return true;
+                    }
+                    break;
+                case Key.D4:
+                    if (isNone) {
+                        notesVm.SelectToolCommand?.Execute("4").Subscribe();
+                        return true;
+                    }
+                    if (isAlt) {
+                        expSelector4?.SelectExp();
+                        return true;
+                    }
+                    break;
+                case Key.D5:
+                    if (isNone) {
+                        notesVm.SelectToolCommand?.Execute("5").Subscribe();
+                        return true;
+                    }
+                    if (isAlt) {
+                        expSelector5?.SelectExp();
+                        return true;
+                    }
+                    break;
+                #endregion
+                #region toggle show keyws
+                case Key.R:
+                    if (isNone) {
+                        notesVm.ShowFinalPitch = !notesVm.ShowFinalPitch;
+                        return true;
+                    }
+                    break;
+                case Key.T:
+                    if (isNone) {
+                        notesVm.ShowTips = !notesVm.ShowTips;
+                        return true;
+                    }
+                    break;
+                case Key.U:
+                    if (isNone) {
+                        notesVm.ShowVibrato = !notesVm.ShowVibrato;
+                        return true;
+                    }
+                    break;
+                case Key.I:
+                    if (isNone) {
+                        notesVm.ShowPitch = !notesVm.ShowPitch;
+                        return true;
+                    }
+                    break;
+                case Key.O:
+                    if (isNone) {
+                        notesVm.ShowPhoneme = !notesVm.ShowPhoneme;
+                        return true;
+                    }
+                    break;
+                case Key.P:
+                    if (isNone) {
+                        notesVm.IsSnapOn = !notesVm.IsSnapOn;
+                        return true;
+                    }
+                    if (isAlt) {
+                        SnapDivMenu.Open();
+                    }
+                    break;
+                case Key.OemPipe:
+                    if (isNone) {
+                        notesVm.ShowNoteParams = !notesVm.ShowNoteParams;
+                        return true;
+                    }
+                    break;
+                #endregion
+                #region navigate keys
+                // NAVIGATE/EDIT/SELECT HANDLERS
+                case Key.Up:
+                    if (isNone) {
+                        notesVm.TransposeSelection(1);
+                        return true;
+                    }
+                    if (isCtrl) {
+                        notesVm.TransposeSelection(12);
+                        return true;
+                    }
+                    break;
+                case Key.Down:
+                    if (isNone) {
+                        notesVm.TransposeSelection(-1);
+                        return true;
+                    }
+                    if (isCtrl) {
+                        notesVm.TransposeSelection(-12);
+                        return true;
+                    }
+                    break;
+                case Key.Left:
+                    if (isNone) {
+                        notesVm.MoveCursor(-1);
+                        return true;
+                    }
+                    if (isAlt) {
+                        notesVm.ResizeSelectedNotes(-1 * deltaTicks);
+                        return true;
+                    }
+                    if (isCtrl) {
+                        notesVm.MoveSelectedNotes(-1 * deltaTicks);
+                        return true;
+                    }
+                    if (isShift) {
+                        notesVm.ExtendSelection(-1);
+                        return true;
+                    }
+                    break;
+                case Key.Right:
+                    if (isNone) {
+                        notesVm.MoveCursor(1);
+                        return true;
+                    }
+                    if (isAlt) {
+                        notesVm.ResizeSelectedNotes(deltaTicks);
+                        return true;
+                    }
+                    if (isCtrl) {
+                        notesVm.MoveSelectedNotes(deltaTicks);
+                        return true;
+                    }
+                    if (isShift) {
+                        notesVm.ExtendSelection(1);
+                        return true;
+                    }
+                    break;
+                case Key.OemPlus:
+                    if (isNone) {
+                        notesVm.ResizeSelectedNotes(deltaTicks);
+                        return true;
+                    }
+                    break;
+                case Key.OemMinus:
+                    if (isNone) {
+                        notesVm.ResizeSelectedNotes(-1 * deltaTicks);
+                        return true;
+                    }
+                    break;
+                #endregion
+                #region clipboard and edit keys
+                case Key.Z:
+                    if (isBoth) {
+                        ViewModel.Redo();
+                        return true;
+                    }
+                    if (isCtrl) {
+                        ViewModel.Undo();
+                        return true;
+                    }
+                    break;
+                case Key.Y:
+                    // toggle play tone
+                    if (isNone) {
+                        notesVm.PlayTone = !notesVm.PlayTone;
+                        return true;
+                    }
+                    if (isCtrl) {
+                        ViewModel.Redo();
+                        return true;
+                    }
+                    break;
+                case Key.C:
+                    if (isCtrl) {
+                        notesVm.CopyNotes();
+                        return true;
+                    }
+                    break;
+                case Key.X:
+                    if (isCtrl) {
+                        notesVm.CutNotes();
+                        return true;
+                    }
+                    break;
+                case Key.V:
+                    if (isCtrl) {
+                        notesVm.PasteNotes();
+                        return true;
+                    }
+                    break;
+                // INSERT + DELETE
+                case Key.Insert:
+                    if (isNone) {
+                        notesVm.InsertNote();
+                        return true;
+                    }
+                    break;
+                case Key.Delete:
+                case Key.Back:
+                    if (isNone) {
+                        notesVm.DeleteSelectedNotes();
+                        return true;
+                    }
+                    break;
+                #endregion
+                #region play position and select keys
+                // PLAY POSITION + SELECTION
+                case Key.Home:
+                    if (isNone) {
+                        playVm.MovePlayPos(notesVm.Part.position);
+                        return true;
+                    }
+                    if (isShift) {
+                        var first = notesVm.Part.notes.FirstOrDefault();
+                        if (first != null) {
+                            notesVm.ExtendSelection(first);
+                        }
+                        return true;
+                    }
+                    break;
+                case Key.End:
+                    if (isNone) {
+                        playVm.MovePlayPos(notesVm.Part.End);
+                        return true;
+                    }
+                    if (isShift) {
+                        var last = notesVm.Part.notes.LastOrDefault();
+                        if (last != null) {
+                            notesVm.ExtendSelection(last);
+                        }
+                        return true;
+                    }
+                    break;
+                case Key.OemOpenBrackets:
+                    // move playhead left
+                    if (isNone) {
+                        playVm.MovePlayPos(playVm.PlayPosTick - snapUnit);
+                        return true;
+                    }
+                    // to selection start
+                    if (isCtrl) {
+                        if (!notesVm.Selection.IsEmpty) {
+                            playVm.MovePlayPos(notesVm.Part.position + notesVm.Selection.FirstOrDefault()!.position);
+                        }
+                        return true;
+                    }
+                    // to view start
+                    if (isShift) {
+                        playVm.MovePlayPos(notesVm.Part.position + (int)notesVm.TickOffset);
+                        return true;
+                    }
+                    break;
+                case Key.OemCloseBrackets:
+                    // move playhead right
+                    if (isNone) {
+                        playVm.MovePlayPos(playVm.PlayPosTick + snapUnit);
+                        return true;
+                    }
+                    // to selection end
+                    if (isCtrl) {
+                        if (!notesVm.Selection.IsEmpty) {
+                            playVm.MovePlayPos(notesVm.Part.position + notesVm.Selection.LastOrDefault()!.RightBound);
+                        }
+                        return true;
+                    }
+                    // to view end
+                    if (isShift) {
+                        playVm.MovePlayPos(notesVm.Part.position + (int)(notesVm.TickOffset));
+                        return true;
+                    }
+                    break;
+
+                #endregion
+                #region scroll and select keys
+                // SCROLL / SELECT
+                case Key.A:
+                    // scroll left
+                    if (isNone) {
+                        notesVm.TickOffset = Math.Max(0, notesVm.TickOffset - snapUnit);
+                        return true;
+                    }
+                    // select all
+                    if (isCtrl) {
+                        notesVm.SelectAllNotes();
+                        return true;
+                    }
+                    break;
+                case Key.D:
+                    // scroll right
+                    if (isNone) {
+                        notesVm.TickOffset = Math.Min(notesVm.TickOffset + snapUnit, notesVm.HScrollBarMax);
+                        return true;
+                    }
+                    // select none
+                    if (isCtrl) {
+                        notesVm.SelectAllNotes();
+                        return true;
+                    }
+                    break;
+                case Key.W:
+                    // toggle show waveform
+                    if (isNone) {
+                        notesVm.ShowWaveform = !notesVm.ShowWaveform;
+                        return true;
+                    }
+                    // scroll up
+                    // NOTE set to alt to avoid conflict with showwaveform toggle
+                    if (isAlt) {
+                        notesVm.TrackOffset = Math.Max(notesVm.TrackOffset - 2, 0);
+                        return true;
+                    }
+                    break;
+                case Key.S:
+                    // scroll down
+                    if (isAlt) {
+                        notesVm.TrackOffset = Math.Min(notesVm.TrackOffset + 2, notesVm.VScrollBarMax);
+                        return true;
+                    }
+                    if (isCtrl) {
+                        _ = MainWindow?.Save();
+                        return true;
+                    }
+                    // solo
+                    if(isShift) {
+                        var track = project.tracks[notesVm.Part.trackNo];
+                        MessageBus.Current.SendMessage(new TracksSoloEvent(notesVm.Part.trackNo, !track.Solo, false));
+                        return true;
+                    }
+                    break;
+                case Key.M:
+                    // mute
+                    if (isShift) {
+                        MessageBus.Current.SendMessage(new TracksMuteEvent(notesVm.Part.trackNo, false));
+                    }
+                    break;
+                case Key.F:
+                    // scroll selection into focus
+                    if (isNone) {
+                        var note = notesVm.Selection.FirstOrDefault();
+                        if (note != null) {
+                            DocManager.Inst.ExecuteCmd(new FocusNoteNotification(notesVm.Part, note));
+                        }
+                        return true;
+                    }
+                    if (isCtrl) {
+                        if (!notesVm.Selection.IsEmpty) {
+                            playVm.MovePlayPos(notesVm.Part.position + notesVm.Selection.FirstOrDefault()!.position);
+                        }
+                        return true;
+                    }
+                    break;
+                case Key.E:
+                    // zoom in
+                    if (isNone) {
+                        double x = 0;
+                        double y = 0;
+                        if (!notesVm.Selection.IsEmpty) {
+                            x = (notesVm.Selection.Head!.position - notesVm.TickOffset) / notesVm.ViewportTicks;
+                            y = (ViewConstants.MaxTone - 1 - notesVm.Selection.Head.tone - notesVm.TrackOffset) / notesVm.ViewportTracks;
+                        } else if (notesVm.TickOffset != 0) {
+                            x = 0.5;
+                            y = 0.5;
+                        }
+                        notesVm.OnXZoomed(new Point(x, y), 0.1);
+                        return true;
+                    }
+                    break;
+                case Key.Q:
+                    // zoom out
+                    if (isNone) {
+                        double x = 0;
+                        double y = 0;
+                        if (!notesVm.Selection.IsEmpty) {
+                            x = (notesVm.Selection.Head!.position - notesVm.TickOffset) / notesVm.ViewportTicks;
+                            y = (ViewConstants.MaxTone - 1 - notesVm.Selection.Head.tone - notesVm.TrackOffset) / notesVm.ViewportTracks;
+                        } else if (notesVm.TickOffset != 0) {
+                            x = 0.5;
+                            y = 0.5;
+                        }
+                        notesVm.OnXZoomed(new Point(x, y), -0.1);
+                        return true;
+                    }
+                    break;
+                    #endregion
+            }
+            return false;
+        }
+
+        public string[] CacheExpressions() {
+            NotesViewModel vm = (DataContext as PianoRollViewModel)!.NotesViewModel;
+            return new string[] { vm.SecondaryKey, vm.PrimaryKey };
+        }
+        public void LoadCacheExpressions(string[] cache) {
+            if (expSelector1 == null) {
+                return;
+            }
+            foreach (string key in cache) {
+                UExpressionDescriptor? exp = (expSelector1.DataContext as ExpSelectorViewModel)?.Descriptor;
+                if (exp != null && exp.abbr == key) {
+                    expSelector1.SelectExp();
+                    continue;
+                }
+                exp = (expSelector2.DataContext as ExpSelectorViewModel)?.Descriptor;
+                if (exp != null && exp.abbr == key) {
+                    expSelector2.SelectExp();
+                    continue;
+                }
+                exp = (expSelector3.DataContext as ExpSelectorViewModel)?.Descriptor;
+                if (exp != null && exp.abbr == key) {
+                    expSelector3.SelectExp();
+                    continue;
+                }
+                exp = (expSelector4.DataContext as ExpSelectorViewModel)?.Descriptor;
+                if (exp != null && exp.abbr == key) {
+                    expSelector4.SelectExp();
+                    continue;
+                }
+                exp = (expSelector5.DataContext as ExpSelectorViewModel)?.Descriptor;
+                if (exp != null && exp.abbr == key) {
+                    expSelector5.SelectExp();
+                    continue;
                 }
             }
         }

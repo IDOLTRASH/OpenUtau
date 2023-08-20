@@ -6,9 +6,10 @@ using OpenUtau.Core.Ustx;
 
 namespace OpenUtau.Core {
     public abstract class NoteCommand : UCommand {
-        protected readonly UNote[] Notes;
+        public readonly UNote[] Notes;
         public readonly UVoicePart Part;
         public override ValidateOptions ValidateOptions => new ValidateOptions {
+            SkipTiming = true,
             Part = Part,
         };
         public NoteCommand(UVoicePart part, UNote note) {
@@ -157,6 +158,7 @@ namespace OpenUtau.Core {
     public abstract class VibratoCommand : NoteCommand {
         public VibratoCommand(UVoicePart part, UNote note) : base(part, note) { }
         public override ValidateOptions ValidateOptions => new ValidateOptions {
+            SkipTiming = true,
             Part = Part,
             SkipPhonemizer = true,
             SkipPhoneme = true,
@@ -314,6 +316,7 @@ namespace OpenUtau.Core {
         readonly int oldOffset;
         readonly int newOffset;
         public override ValidateOptions ValidateOptions => new ValidateOptions {
+            SkipTiming = true,
             Part = Part,
             SkipPhonemizer = true,
         };
@@ -349,6 +352,7 @@ namespace OpenUtau.Core {
         readonly float oldDelta;
         readonly float newDelta;
         public override ValidateOptions ValidateOptions => new ValidateOptions {
+            SkipTiming = true,
             Part = Part,
             SkipPhonemizer = true,
         };
@@ -376,6 +380,7 @@ namespace OpenUtau.Core {
         readonly float oldDelta;
         readonly float newDelta;
         public override ValidateOptions ValidateOptions => new ValidateOptions {
+            SkipTiming = true,
             Part = Part,
             SkipPhonemizer = true,
         };
@@ -401,6 +406,7 @@ namespace OpenUtau.Core {
         readonly UNote note;
         readonly Tuple<int, int?, float?, float?>[] oldValues;
         public override ValidateOptions ValidateOptions => new ValidateOptions {
+            SkipTiming = true,
             Part = Part,
             SkipPhonemizer = true,
         };
@@ -433,11 +439,12 @@ namespace OpenUtau.Core {
         readonly UNote note;
         readonly int index;
         readonly string oldAlias;
-        readonly string newAlias;
+        readonly string? newAlias;
         public override ValidateOptions ValidateOptions => new ValidateOptions {
+            SkipTiming = true,
             Part = Part,
         };
-        public ChangePhonemeAliasCommand(UVoicePart part, UNote note, int index, string alias) : base(part, note) {
+        public ChangePhonemeAliasCommand(UVoicePart part, UNote note, int index, string? alias) : base(part, note) {
             this.note = note;
             this.index = index;
             var o = this.note.GetPhonemeOverride(index);
@@ -447,11 +454,11 @@ namespace OpenUtau.Core {
 
         public override void Execute() {
             var o = note.GetPhonemeOverride(index);
-            o.phoneme = string.IsNullOrWhiteSpace(newAlias) ? null : newAlias;
+            o.phoneme = string.IsNullOrWhiteSpace(newAlias) ? string.Empty : newAlias;
         }
         public override void Unexecute() {
             var o = note.GetPhonemeOverride(index);
-            o.phoneme = string.IsNullOrWhiteSpace(oldAlias) ? null : oldAlias;
+            o.phoneme = string.IsNullOrWhiteSpace(oldAlias) ? string.Empty : oldAlias;
         }
         public override string ToString() => "Change phoneme alias";
     }

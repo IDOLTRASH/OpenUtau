@@ -4,7 +4,7 @@ using OpenUtau.Api;
 using OpenUtau.Core.Ustx;
 
 namespace OpenUtau.Plugin.Builtin {
-    [Phonemizer("Vietnamese CVVC Phonemizer", "VIE CVVC", "Jani Tran")]
+    [Phonemizer("Vietnamese CVVC Phonemizer", "VIE CVVC", "Jani Tran", language:"VI")]
     public class VietnameseCVVCPhonemizer : Phonemizer {
         /// <summary>
         /// The lookup table to convert a hiragana to its tail vowel.
@@ -24,7 +24,7 @@ namespace OpenUtau.Plugin.Builtin {
             "n=n,N",
             "ng=g,G",
             "nh=h,H",
-            "-=c,C,t,T,-,p,P,R",
+            "-=c,C,t,T,-,p,P,R,1,2,3,4,5",
         };
 
         static readonly Dictionary<string, string> vowelLookup;
@@ -41,6 +41,9 @@ namespace OpenUtau.Plugin.Builtin {
         private USinger singer;
 
         public override void SetSinger(USinger singer) => this.singer = singer;
+        
+        // Legacy mapping. Might adjust later to new mapping style.
+		public override bool LegacyMapping => true;
 
         public override Result Process(Note[] notes, Note? prev, Note? next, Note? prevNeighbour, Note? nextNeighbour, Note[] prevNeighbours) {
             var note = notes[0];
@@ -54,12 +57,27 @@ namespace OpenUtau.Plugin.Builtin {
                 };
             }
             int totalDuration = notes.Sum(n => n.duration);
-            int Short = totalDuration * 4 / 6;
-            int Long = totalDuration / 6;
-            int Medium = totalDuration / 3;
-            int VCP = -60;
-            int End = totalDuration - 30;
-            int ViTri = Short;
+            int Short = 0;
+            int Long = 0;
+            int Medium = 0;
+            int VCP = 0;
+            int End = 0;
+            int ViTri = 0;
+            if (totalDuration < 350) {
+                Short = totalDuration * 4 / 7;
+                Long = totalDuration / 6;
+                Medium = totalDuration / 3;
+                VCP = -90;
+                End = totalDuration * 4 / 5;
+                ViTri = Short;
+            } else {
+                Short = totalDuration - 170;
+                Long = 90;
+                Medium = 180;
+                VCP = -90;
+                End = totalDuration - 50;
+                ViTri = Short;
+            }
             bool a;
             bool NoNext = nextNeighbour == null && note.lyric != "R";
             var loi = note.lyric;
@@ -85,7 +103,7 @@ namespace OpenUtau.Plugin.Builtin {
                 if (note.lyric == "quôc") {
                 note.lyric = "quâc";
             }
-                if (note.lyric != "gi") {
+            if (note.lyric != "gi" && note.lyric != "gin" && note.lyric != "gim" && note.lyric != "ginh" && note.lyric != "ging" && note.lyric != "git" && note.lyric != "gip" && note.lyric != "gic" && note.lyric != "gich") {
                 loi = note.lyric.Replace('à', 'a').Replace('á', 'a').Replace('ả', 'a').Replace('ã', 'a').Replace('ạ', 'a');
                 loi = note.lyric.Replace('ằ', 'ă').Replace('ắ', 'ă').Replace('ẳ', 'ă').Replace('ẵ', 'ă').Replace('ặ', 'ă');
                 loi = note.lyric.Replace('ầ', 'â').Replace('ấ', 'â').Replace('ẩ', 'â').Replace('ẫ', 'â').Replace('ậ', 'â');
@@ -102,8 +120,10 @@ namespace OpenUtau.Plugin.Builtin {
                     .Replace("gi", "z").Replace("gh", "g").Replace("c", "k").Replace("kh", "K").Replace("ng", "N")
                     .Replace("ngh", "N").Replace("nh", "J").Replace("x", "s").Replace("tr", "Z").Replace("th", "T")
                     .Replace("q", "k").Replace("r", "z");
-            } else
-                loi = "zi";
+            } else {
+                loi = note.lyric.Replace('ì', 'i').Replace('í', 'i').Replace('ỉ', 'i').Replace('ĩ', 'i').Replace('ị', 'i');
+                loi = loi.Replace("gi", "zi").Replace("ng", "N").Replace("nh", "J").Replace("ch", "C").Replace("c", "k");
+            }
             bool tontaiVVC = (loi.EndsWith("iên") || loi.EndsWith("iêN") || loi.EndsWith("iêm") || loi.EndsWith("iêt") || loi.EndsWith("iêk") || loi.EndsWith("iêp") || loi.EndsWith("iêu")
                            || loi.EndsWith("yên") || loi.EndsWith("yêN") || loi.EndsWith("yêm") || loi.EndsWith("yêt") || loi.EndsWith("yêk") || loi.EndsWith("yêp") || loi.EndsWith("yêu")
                            || loi.EndsWith("uôn") || loi.EndsWith("uôN") || loi.EndsWith("uôm") || loi.EndsWith("uôt") || loi.EndsWith("uôk") || loi.EndsWith("uôi")
@@ -120,6 +140,12 @@ namespace OpenUtau.Plugin.Builtin {
                          || loi.StartsWith("J") || loi.StartsWith("r") || loi.StartsWith("s") || loi.StartsWith("t")
                          || loi.StartsWith("T") || loi.StartsWith("Z") || loi.StartsWith("v") || loi.StartsWith("w")
                          || loi.StartsWith("z") || loi.StartsWith("p"));
+            int x = prevNeighbour?.duration ?? default(int);
+            if (x < 160 && prevNeighbour != null) { VCP = -(x * 4 / 8); } 
+            else if (loi.StartsWith("b") || loi.StartsWith("d") || loi.StartsWith("g") || loi.StartsWith("d") || loi.StartsWith("k") || loi.StartsWith("l")
+                                         || loi.StartsWith("m") || loi.StartsWith("n") || loi.StartsWith("nh") || loi.StartsWith("ng") || loi.StartsWith("t") || loi.StartsWith("th")
+                                         || loi.StartsWith("v") || loi.StartsWith("w") || loi.StartsWith("y")) VCP = -70;
+            else VCP = -110;
             bool kocoC;
             if (tontaiC == true) {
                 kocoC = false;
@@ -161,8 +187,9 @@ namespace OpenUtau.Plugin.Builtin {
                   || loi.EndsWith("ăN") || loi.EndsWith("âN")
                   || loi.EndsWith("ăm") || loi.EndsWith("âm")
                   || loi.EndsWith("aJ") || loi.EndsWith("iJ") || loi.EndsWith("êJ") || loi.EndsWith("yJ")
-                  || loi.EndsWith("aC") || loi.EndsWith("iC") || loi.EndsWith("êC") || loi.EndsWith("yC")
-                  || loi.EndsWith("ôN") || loi.EndsWith("uN") || loi.EndsWith("oN");
+                  || loi.EndsWith("ôN") || loi.EndsWith("uN") || loi.EndsWith("oN")
+                  || loi.EndsWith("aC") || loi.EndsWith("iC") || loi.EndsWith("êC") || loi.EndsWith("yC");
+            bool XO = false;
             if (ViTriTB) {
                 ViTri = Medium;
             }
@@ -172,8 +199,12 @@ namespace OpenUtau.Plugin.Builtin {
             if (ViTriDai) {
                 ViTri = Long;
             }
+            if (loi.EndsWith("uôN")) {
+                ViTri = Short;
+            }
             var dem = loi.Length;
             var phoneme = "";
+            var phonemes = new List<Phoneme>();
             // 1 kí tự 
             if (note.lyric.StartsWith("?")) {
                 phoneme = note.lyric.Substring(1);
@@ -185,15 +216,15 @@ namespace OpenUtau.Plugin.Builtin {
                              .Replace("Z", "tr").Replace("T", "th");
                     if (NoNext) {
                         if (prevNeighbour == null) {
-                            return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"-{N}"  },
-                            new Phoneme { phoneme = $"{N}-", position = End  },
-                            }
-                            };
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"-{N}" });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{N}-", position = End });
                         }
-                    } else
-                        phoneme = $"-{N}";
+                    } else if (prevNeighbour == null) {
+                        phonemes.Add(
+                        new Phoneme { phoneme = $"-{N}" });
+                    }
                 }
                 // 2 kí tự CV, ví dụ: "ba"
                 if ((dem == 2) && tontaiC) {
@@ -206,15 +237,15 @@ namespace OpenUtau.Plugin.Builtin {
                              .Replace("ư", "U");
                     if (NoNext) {
                         if (prevNeighbour == null) {
-                            return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{N}"  },
-                            new Phoneme { phoneme = $"{N2}-", position = End  },
-                            }
-                            };
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{N}" });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{N2}-", position = End });
                         }
-                    } else
-                        phoneme = $"{N}";
+                    } else if (prevNeighbour == null) {
+                        phonemes.Add(
+                            new Phoneme { phoneme = $"{N}" });
+                    }
                 }
                 // 2 kí tự VV, ví dụ: "oa"
                 if ((dem == 2) && kocoC) {
@@ -240,30 +271,25 @@ namespace OpenUtau.Plugin.Builtin {
                     }
                     if (NoNext && tontaiCcuoi) {
                         if (prevNeighbour == null) {
-                            return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"-{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri  },
-                            }
-                            };
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"-{V1}" });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri });
                         }
                     } else if (NoNext) {
                         if (prevNeighbour == null) {
-                            return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"-{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri  },
-                            new Phoneme { phoneme = $"{N}-", position = End  },
-                            }
-                            };
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"-{V1}" });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{N}-", position = End });
                         }
                     } else if (prevNeighbour == null) {
-                        return new Result {
-                            phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"-{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri  },
-                        }
-                        };
+                        phonemes.Add(
+                            new Phoneme { phoneme = $"-{V1}" });
+                        phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri });
                     }
                 }
                 // 3 kí tự VVC/VVV chia 3 nốt, ví dụ: "oát" "oan" "oai"
@@ -289,33 +315,31 @@ namespace OpenUtau.Plugin.Builtin {
                     }
                     if (NoNext && tontaiCcuoi) {
                         if (prevNeighbour == null) {
-                            return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"-{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{V2}{V3}", position = ViTri  },
-                            }
-                            };
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"-{V1}" });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{V2}{V3}", position = ViTri });
                         }
                     } else if (NoNext) {
                         if (prevNeighbour == null) {
-                            return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"-{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{V2}{V3}", position = ViTri  },
-                            new Phoneme { phoneme = $"{N}-", position = End  },
-                            }
-                            };
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"-{V1}" });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{V2}{V3}", position = ViTri });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{N}-", position = End });
                         }
                     } else if (prevNeighbour == null) {
-                        return new Result {
-                            phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"-{V1}" },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long },
-                            new Phoneme { phoneme = $"{V2}{V3}", position = ViTri },
-                        }
-                        };
+                        phonemes.Add(
+                            new Phoneme { phoneme = $"-{V1}" });
+                        phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                        phonemes.Add(
+                            new Phoneme { phoneme = $"{V2}{V3}", position = ViTri });
                     }
                 }
                 // 3 kí tự VVV/VVC chia 2 nốt, ví dụ: "yên" "ướt"
@@ -330,30 +354,25 @@ namespace OpenUtau.Plugin.Builtin {
                     C = C.Replace("C", "ch").Replace("N", "ng").Replace("J", "nh");
                     if (NoNext && tontaiCcuoi) {
                         if (prevNeighbour == null) {
-                            return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"-{V1}"  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                            }
-                            };
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"-{V1}" });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
                         }
                     } else if (NoNext) {
                         if (prevNeighbour == null) {
-                            return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"-{V1}"  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                            new Phoneme { phoneme = $"{C}-", position = End  },
-                            }
-                            };
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"-{V1}" });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{C}-", position = End });
                         }
                     } else if (prevNeighbour == null) {
-                        return new Result {
-                            phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"-{V1}"  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                        }
-                        };
+                        phonemes.Add(
+                            new Phoneme { phoneme = $"-{V1}" });
+                        phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
                     }
                 }
                 // 3 kí tự CVV/CVC, ví dụ: "hoa" "hang" "hát"
@@ -381,30 +400,25 @@ namespace OpenUtau.Plugin.Builtin {
                     }
                     if (NoNext && tontaiCcuoi) {
                         if (prevNeighbour == null) {
-                            return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri  },
-                            }
-                            };
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri });
                         }
                     } else if (NoNext) {
                         if (prevNeighbour == null) {
-                            return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri  },
-                            new Phoneme { phoneme = $"{N}-", position = End  },
-                            }
-                            };
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{N}-", position = End });
                         }
                     } else if (prevNeighbour == null) {
-                        return new Result {
-                            phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri  },
-                            }
-                        };
+                        phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                        phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri });
                     }
                 }
                 // 4 kí tự VVVC có VVC liền, chia 3 nốt, ví dụ "uyết" "uyên"
@@ -425,33 +439,31 @@ namespace OpenUtau.Plugin.Builtin {
                     }
                     if (NoNext && tontaiCcuoi) {
                         if (prevNeighbour == null) {
-                            return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"-{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                            }
-                            };
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"-{V1}" });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
                         }
                     } else if (NoNext) {
                         if (prevNeighbour == null) {
-                            return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"-{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                            new Phoneme { phoneme = $"{C}-", position = End  },
-                            }
-                            };
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"-{V1}" });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{C}-", position = End });
                         }
                     } else if (prevNeighbour == null) {
-                        return new Result {
-                            phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"-{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                            }
-                        };
+                        phonemes.Add(
+                            new Phoneme { phoneme = $"-{V1}"  });
+                        phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                        phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
                     }
                 }
                 // 4 kí tự CVVC, có VVC liền, chia 2 nốt, ví dụ "thiết" "tiên"
@@ -467,34 +479,29 @@ namespace OpenUtau.Plugin.Builtin {
                     C2 = C2.Replace("C", "ch").Replace("N", "ng").Replace("J", "nh");
                     if (NoNext && tontaiCcuoi) {
                         if (prevNeighbour == null) {
-                            return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                            }
-                            };
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
                         }
                     } else if (NoNext) {
                         if (prevNeighbour == null) {
-                            return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                            new Phoneme { phoneme = $"{C2}-", position = End  },
-                            }
-                            };
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{C2}-", position = End });
                         }
                     } else if (prevNeighbour == null) {
-                        return new Result {
-                            phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                        }
-                        };
+                        phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                        phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
                     }
-                }
+                } else XO = true;
                 // 4 kí tự CVVC/CVVV, chia 3 nốt, ví dụ "thoát" "toan" "toại"
-                if (dem == 4 && tontaiC) {
+                if (dem == 4 && tontaiC && XO) {
                     string C = loi.Substring(0, 1);
                     string V1 = loi.Substring(1, 1);
                     string V2 = loi.Substring(2, 1);
@@ -517,33 +524,31 @@ namespace OpenUtau.Plugin.Builtin {
                     }
                     if (NoNext && tontaiCcuoi) {
                         if (prevNeighbour == null) {
-                            return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VC}", position = ViTri  },
-                            }
-                            };
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{VC}", position = ViTri });
                         }
                     } else if (NoNext) {
                         if (prevNeighbour == null) {
-                            return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VC}", position = ViTri  },
-                            new Phoneme { phoneme = $"{N}-", position = End  },
-                            }
-                            };
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{VC}", position = ViTri });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{N}-", position = End });
                         }
                     } else if (prevNeighbour == null) {
-                        return new Result {
-                            phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VC}", position = ViTri  },
-                            }
-                        };
+                        phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                        phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                        phonemes.Add(
+                            new Phoneme { phoneme = $"{VC}", position = ViTri });
                     }
                 }
                 // 5 kí tự CVVVC, có VVC liền, chia 3 nốt, ví dụ "thuyết"
@@ -566,33 +571,31 @@ namespace OpenUtau.Plugin.Builtin {
                     }
                     if (NoNext && tontaiCcuoi) {
                         if (prevNeighbour == null) {
-                            return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                            }
-                            };
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
                         }
                     } else if (NoNext) {
                         if (prevNeighbour == null) {
-                            return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                            new Phoneme { phoneme = $"{N}-", position = End  },
-                            }
-                            };
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
+                            phonemes.Add(
+                            new Phoneme { phoneme = $"{N}-", position = End });
                         }
                     } else if (prevNeighbour == null) {
-                        return new Result {
-                            phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                            }
-                        };
+                        phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                        phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                        phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
                     }
                 }
                 if (BR) {
@@ -601,11 +604,8 @@ namespace OpenUtau.Plugin.Builtin {
                         num = "1";
                     }
                     if (prevNeighbour == null) {
-                        return new Result {
-                            phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"breath{num}"  },
-                        }
-                        };
+                        phonemes.Add(
+                            new Phoneme { phoneme = $"breath{num}" });
                     }
                 }
             }
@@ -665,7 +665,8 @@ namespace OpenUtau.Plugin.Builtin {
                     if (PR.EndsWith("ao") || PR.EndsWith("eo")) {
                         vow = "u";
                     }
-                    bool prevtontaiCcuoi = (PR.EndsWith("t") || PR.EndsWith("C") || PR.EndsWith("p") || PR.EndsWith("k"));
+                    XO = false;
+                    bool prevtontaiCcuoi = (PR.EndsWith("t") || PR.EndsWith("C") || PR.EndsWith("p") || PR.EndsWith("k") || PR.EndsWith("breaT"));
                     bool prevkocoCcuoi;
                     bool Cvoiced = PR.EndsWith("J") || PR.EndsWith("n") || PR.EndsWith("m") || PR.EndsWith("N");
                     if (prevtontaiCcuoi == true) {
@@ -682,36 +683,37 @@ namespace OpenUtau.Plugin.Builtin {
                                          .Replace("ư", "U").Replace("C", "ch").Replace("K", "kh").Replace("N", "ng").Replace("J", "nh")
                                          .Replace("Z", "tr").Replace("T", "th");
                                 if (Cvoiced && note.lyric != "-") {
-                                    return new Result {
-                                        phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {N}"  },
-                            new Phoneme { phoneme = $"{N}-", position = End  },
-                                    }
-                                    };
+                                    phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {N}" });
+                                    phonemes.Add(
+                            new Phoneme { phoneme = $"{N}-", position = End });
                                 } else {
-                                    return new Result {
-                                        phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow}{N}"  },
-                            new Phoneme { phoneme = $"{N}-", position = End  },
-                                    }
-                                    };
+                                    phonemes.Add(
+                            new Phoneme { phoneme = $"{vow}{N}" });
+                                    phonemes.Add(
+                            new Phoneme { phoneme = $"{N}-", position = End });
                                 }
                             } else if (Cvoiced && note.lyric != "-") {
                                 phoneme = $"{vow} {loi}";
                                 phoneme = phoneme.Replace("ă", "a").Replace("â", "A").Replace("ơ", "@").Replace("y", "i").Replace("ê", "E").Replace("ô", "O")
                                          .Replace("ư", "U").Replace("C", "ch").Replace("K", "kh").Replace("N", "ng").Replace("J", "nh")
                                          .Replace("Z", "tr").Replace("T", "th");
+                                phonemes.Add(
+                                    new Phoneme { phoneme = phoneme });
                             } else {
                                 phoneme = $"{vow}{loi}";
                                 phoneme = phoneme.Replace("ă", "a").Replace("â", "A").Replace("ơ", "@").Replace("y", "i").Replace("ê", "E").Replace("ô", "O")
                                          .Replace("ư", "U").Replace("C", "ch").Replace("K", "kh").Replace("N", "ng").Replace("J", "nh")
                                          .Replace("Z", "tr").Replace("T", "th");
+                                phonemes.Add(
+                                    new Phoneme { phoneme = phoneme });
                             }
 
                         }
                         // R
                         if (loi == "R") {
-                            phoneme = $"{vow} R";
+                            phonemes.Add(
+                           new Phoneme { phoneme = $"{vow} R" });
                         }
                         // 2 kí tự CV, ví dụ: "ba"
                         if ((dem == 2) && tontaiC) {
@@ -720,32 +722,26 @@ namespace OpenUtau.Plugin.Builtin {
                             C = C.Replace("C", "ch").Replace("K", "kh").Replace("N", "ng").Replace("J", "nh").Replace("Z", "tr").Replace("T", "th");
                             V = V.Replace("ă", "a").Replace("â", "A").Replace("ơ", "@").Replace("y", "i").Replace("ê", "E").Replace("ô", "O").Replace("ư", "U");
                             if (prevkocoCcuoi && NoNext) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                                    new Phoneme { phoneme = $"{vow} {C}", position = VCP },
-                                    new Phoneme { phoneme = $"{C}{V}" },
-                                    new Phoneme { phoneme = $"{V}-", position = End },
-                                }
-                                };
+                                phonemes.Add(
+                                    new Phoneme { phoneme = $"{vow} {C}", position = VCP });
+                                phonemes.Add(
+                                    new Phoneme { phoneme = $"{C}{V}" });
+                                phonemes.Add(
+                                    new Phoneme { phoneme = $"{V}-", position = End });
                             } else if (prevkocoCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {C}", position = VCP  },
-                            new Phoneme { phoneme = $"{C}{V}"  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {C}", position = VCP });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V}" });
                             } else if (NoNext) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{C}{V}"  },
-                            new Phoneme { phoneme = $"{V}-", position = End  },
-                                }
-                                };
-                            } else return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{C}{V}"  },
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V}-", position = End });
+                            } else {
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V}" });
                             }
-                            };
                         }
 
                         // 2 kí tự VV/VC, ví dụ: "oa" "át" 
@@ -771,55 +767,45 @@ namespace OpenUtau.Plugin.Builtin {
                                 N = "m";
                             }
                             if (NoNext && Cvoiced && tontaiCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri  },
-                                    }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri });
                             } else if (NoNext && tontaiCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri  },
-                                    }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri });
                             } else if (NoNext && Cvoiced) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                                    new Phoneme { phoneme = $"{vow} {V1}" },
-                                    new Phoneme { phoneme = $"{V1}{V2}", position = ViTri },
-                                    new Phoneme { phoneme = $"{N}-", position = End },
-                                }
-                                };
+                                phonemes.Add(
+                                    new Phoneme { phoneme = $"{vow} {V1}" });
+                                phonemes.Add(
+                                    new Phoneme { phoneme = $"{V1}{V2}", position = ViTri });
+                                phonemes.Add(
+                                    new Phoneme { phoneme = $"{N}-", position = End });
                             } else if (NoNext) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                                    new Phoneme { phoneme = $"{vow}{V1}" },
-                                    new Phoneme { phoneme = $"{V1}{V2}", position = ViTri },
-                                    new Phoneme { phoneme = $"{N}-", position = End  },
-                                }
-                                };
+                                phonemes.Add(
+                                    new Phoneme { phoneme = $"{vow}{V1}" });
+                                phonemes.Add(
+                                    new Phoneme { phoneme = $"{V1}{V2}", position = ViTri });
+                                phonemes.Add(
+                                    new Phoneme { phoneme = $"{N}-", position = End });
                             } else if (Cvoiced && tontaiCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                                    new Phoneme { phoneme = $"{vow} {V1}" },
-                                    new Phoneme { phoneme = $"{V1}{V2}", position = ViTri },
-                                }
-                                };
+                                phonemes.Add(
+                                    new Phoneme { phoneme = $"{vow} {V1}" });
+                                phonemes.Add(
+                                    new Phoneme { phoneme = $"{V1}{V2}", position = ViTri });
                             } else if (Cvoiced) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                                    new Phoneme { phoneme = $"{vow} {V1}" },
-                                    new Phoneme { phoneme = $"{V1}{V2}", position = ViTri },
-                                }
-                                };
-                            } else return new Result {
-                                phonemes = new Phoneme[] {
-                                    new Phoneme { phoneme = $"{vow}{V1}" },
-                                    new Phoneme { phoneme = $"{V1}{V2}", position = ViTri },
+                                phonemes.Add(
+                                    new Phoneme { phoneme = $"{vow} {V1}" });
+                                phonemes.Add(
+                                    new Phoneme { phoneme = $"{V1}{V2}", position = ViTri });
+                            } else {
+                                phonemes.Add(
+                                    new Phoneme { phoneme = $"{vow}{V1}" });
+                                phonemes.Add(
+                                    new Phoneme { phoneme = $"{V1}{V2}", position = ViTri });
                             }
-                            };
                         }
                         // 3 kí tự VVC chia 3 nốt, ví dụ: "oát" "oan" "oai"
                         if ((dem == 3) && koVVCchia && kocoC) {
@@ -842,54 +828,59 @@ namespace OpenUtau.Plugin.Builtin {
                                 ViTri = Medium;
                             }
                             if (NoNext && Cvoiced && tontaiCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VC}", position = ViTri  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VC}", position = ViTri });
                             } else if (NoNext && tontaiCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VC}", position = ViTri  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VC}", position = ViTri });
                             } else if (NoNext && Cvoiced) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VC}", position = ViTri  },
-                            new Phoneme { phoneme = $"{N}-", position = End  },
-                                }
-                                };
-                            } else if (Cvoiced && tontaiCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VC}", position = ViTri  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VC}", position = ViTri });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{N}-", position = End });
                             } else if (NoNext) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VC}", position = ViTri  },
-                            new Phoneme { phoneme = $"{N}-", position = End  },
-                                }
-                                };
-                            } else return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VC}", position = ViTri  },
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VC}", position = ViTri });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{N}-", position = End });
+                            } else if (Cvoiced && tontaiCcuoi) {
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VC}", position = ViTri });
+                            } else if (Cvoiced) {
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VC}", position = ViTri });
+                            } else {
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VC}", position = ViTri });
                             }
-                            };
                         }
                         // 3 kí tự VVV/VVC chia 2 nốt, ví dụ: "yên" "ướt"
                         if ((dem == 3) && tontaiVVC && kocoC) {
@@ -902,48 +893,45 @@ namespace OpenUtau.Plugin.Builtin {
                                    .Replace("ư", "U").Replace("C", "ch").Replace("N", "ng").Replace("J", "nh");
                             N = N.Replace("C", "ch").Replace("N", "ng").Replace("J", "nh");
                             if (NoNext && Cvoiced && tontaiCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {V1}"  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                                }
-                                };
-                            } else if (NoNext && Cvoiced) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {V1}"  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                            new Phoneme { phoneme = $"{N}-", position = End  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
                             } else if (NoNext && tontaiCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow}{V1}"  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                                }
-                                };
-                            } else if (Cvoiced && tontaiCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {V1}"  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
+                            } else if (NoNext && Cvoiced) {
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{N}-", position = End });
                             } else if (NoNext) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow}{V1}"  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                            new Phoneme { phoneme = $"{N}-", position = End  },
-                                }
-                                };
-                            } else return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow}{V1}"  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                                }
-                            };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{N}-", position = End });
+                            } else if (Cvoiced && tontaiCcuoi) {
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
+                            } else if (Cvoiced) {
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
+                            } else {
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
+                            }
                         }
                         // 3 kí tự CVC/CVV, ví dụ: "hát" "hoa"
                         if (dem == 3 && tontaiC) {
@@ -969,59 +957,53 @@ namespace OpenUtau.Plugin.Builtin {
                                 N = "m";
                             }
                             if (NoNext && prevkocoCcuoi && tontaiCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {C}", position = VCP  },
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {C}", position = VCP });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri });
                             } else if (NoNext && prevkocoCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {C}", position = VCP  },
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri  },
-                            new Phoneme { phoneme = $"{N}-", position = End  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {C}", position = VCP });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{N}-", position = End });
                             } else if (NoNext && tontaiCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri });
                             } else if (prevkocoCcuoi && tontaiCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {C}", position = VCP  },
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {C}", position = VCP });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri });
                             } else if (prevkocoCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {C}", position = VCP  },
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {C}", position = VCP });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri });
                             } else if (NoNext) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri  },
-                            new Phoneme { phoneme = $"{N}-", position = End  },
-                                }
-                                };
-                            } else return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri  },
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{N}-", position = End });
+                            } else {
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = ViTri });
                             }
-                            };
                         }
                         // 4 kí tự VVVC có VVC liền, chia 3 nốt, ví dụ "uyết" "uyên"
                         if (dem == 4 && kocoC && tontaiVVC) {
@@ -1040,62 +1022,59 @@ namespace OpenUtau.Plugin.Builtin {
                                 ViTri = Medium;
                             }
                             if (NoNext && Cvoiced && tontaiCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
                             } else if (NoNext && Cvoiced) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                            new Phoneme { phoneme = $"{N}-", position = End  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{N}-", position = End });
                             } else if (NoNext && tontaiCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
                             } else if (Cvoiced && tontaiCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
                             } else if (NoNext) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                            new Phoneme { phoneme = $"{N}-", position = End  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{N}-", position = End });
                             } else if (Cvoiced) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                                }
-                                };
-                            } else return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                                }
-                            };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
+                            } else {
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
+                            }
                         }
                         // 4 kí tự CVVC, có VVC liền, chia 2 nốt, ví dụ "thiết" "tiên"
                         if (dem == 4 && tontaiVVC && tontaiC) {
@@ -1109,63 +1088,56 @@ namespace OpenUtau.Plugin.Builtin {
                                          .Replace("ư", "U").Replace("C", "ch").Replace("N", "ng").Replace("J", "nh");
                             N = N.Replace("C", "ch").Replace("N", "ng").Replace("J", "nh");
                             if (NoNext && prevkocoCcuoi && tontaiCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {C}", position = VCP  },
-                            new Phoneme { phoneme = $"{C}{V1}" },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {C}", position = VCP });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
                             } else if (NoNext && prevkocoCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {C}", position = VCP  },
-                            new Phoneme { phoneme = $"{C}{V1}" },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                            new Phoneme { phoneme = $"{N}-", position = End  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {C}", position = VCP });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{N}-", position = End });
                             } else if (NoNext && tontaiCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                                new Phoneme { phoneme = $"{C}{V1}" },
-                                new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                                }
-                                };
+                                phonemes.Add(
+                                new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                                new Phoneme { phoneme = $"{VVC}", position = ViTri });
                             } else if (prevkocoCcuoi && tontaiCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                                        new Phoneme { phoneme = $"{vow} {C}", position = VCP  },
-                                        new Phoneme { phoneme = $"{C}{V1}" },
-                                        new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                                }
-                                };
+                                phonemes.Add(
+                                        new Phoneme { phoneme = $"{vow} {C}", position = VCP });
+                                phonemes.Add(
+                                        new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                                        new Phoneme { phoneme = $"{VVC}", position = ViTri });
                             } else if (prevkocoCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {C}", position = VCP  },
-                            new Phoneme { phoneme = $"{C}{V1}" },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {C}", position = VCP });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
                             } else if (NoNext) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                                        new Phoneme { phoneme = $"{C}{V1}" },
-                                        new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                                        new Phoneme { phoneme = $"{N}-", position = End  },
-                                }
-                                };
+                                phonemes.Add(
+                                        new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                                        new Phoneme { phoneme = $"{VVC}", position = ViTri });
+                                phonemes.Add(
+                                        new Phoneme { phoneme = $"{N}-", position = End });
+                            } else {
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
                             }
-                            return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{C}{V1}" },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                            }
-                            };
-                        }
+                        } else XO = true;
                         // 4 kí tự CVVC/CVVV, chia 3 nốt, ví dụ "thoát" "thoai"
-                        if (dem == 4 && tontaiC) {
+                        if (dem == 4 && tontaiC && XO) {
                             string C = loi.Substring(0, 1);
                             string V1 = loi.Substring(1, 1);
                             string V2 = loi.Substring(2, 1);
@@ -1187,66 +1159,67 @@ namespace OpenUtau.Plugin.Builtin {
                                 ViTri = Medium;
                             }
                             if (NoNext && prevkocoCcuoi && tontaiCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {C}", position = VCP  },
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VC}", position = ViTri  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {C}", position = VCP });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VC}", position = ViTri });
                             } else if (NoNext && prevkocoCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {C}", position = VCP  },
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VC}", position = ViTri  },
-                            new Phoneme { phoneme = $"{N}-", position = End  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {C}", position = VCP });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VC}", position = ViTri });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{N}-", position = End });
                             } else if (NoNext && tontaiCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VC}", position = ViTri  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VC}", position = ViTri });
                             } else if (tontaiCcuoi && prevkocoCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {C}", position = VCP  },
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VC}", position = ViTri  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {C}", position = VCP });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VC}", position = ViTri });
                             } else if (prevkocoCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {C}", position = VCP  },
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VC}", position = ViTri  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {C}", position = VCP });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VC}", position = ViTri });
                             } else if (NoNext) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VC}", position = ViTri  },
-                            new Phoneme { phoneme = $"{N}-", position = End  },
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VC}", position = ViTri });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{N}-", position = End });
+                            } else {
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VC}", position = ViTri });
                             }
-                                };
-                            } else return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VC}", position = ViTri  },
-                            }
-                            };
                         }
                         // 5 kí tự CVVVC, có VVC liền, chia 3 nốt, ví dụ "thuyết"
                         if (dem == 5 && tontaiVVC && tontaiC) {
@@ -1267,66 +1240,67 @@ namespace OpenUtau.Plugin.Builtin {
                                 ViTri = Medium;
                             }
                             if (NoNext && prevkocoCcuoi && tontaiCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {C}", position = VCP  },
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {C}", position = VCP });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
                             } else if (NoNext && prevkocoCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {C}", position = VCP  },
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                            new Phoneme { phoneme = $"{N}-", position = End  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {C}", position = VCP });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{N}-", position = End });
                             } else if (NoNext && tontaiCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
                             } else if (prevkocoCcuoi && tontaiCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {C}", position = VCP  },
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {C}", position = VCP });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
                             } else if (prevkocoCcuoi) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow} {C}", position = VCP  },
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                                }
-                                };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow} {C}", position = VCP });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
                             } else if (NoNext) {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                            new Phoneme { phoneme = $"{N}-", position = End  },
-                                }
-                                };
-                            } else return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{C}{V1}"  },
-                            new Phoneme { phoneme = $"{V1}{V2}", position = Long  },
-                            new Phoneme { phoneme = $"{VVC}", position = ViTri  },
-                        }
-                            };
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{N}-", position = End });
+                            } else {
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{C}{V1}" });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{V1}{V2}", position = Long });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{VVC}", position = ViTri });
+                            }
                         }
                         if (BR) {
                             string num = loi.Substring(5);
@@ -1334,41 +1308,36 @@ namespace OpenUtau.Plugin.Builtin {
                                 num = "1";
                             }
                             if (vow == "-") {
-                                return new Result {
-                                    phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"breath{num}"  },
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"breath{num}" });
+                            } else {
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"{vow}-", position = -60 });
+                                phonemes.Add(
+                            new Phoneme { phoneme = $"breath{num}" });
                             }
-                                };
-                            } else return new Result {
-                                phonemes = new Phoneme[] {
-                            new Phoneme { phoneme = $"{vow}-", position = -60 },
-                            new Phoneme { phoneme = $"breath{num}"  },
-                            }
-                            };
                         }
                     }
                 }
             }
-                // Get color
-                string color = string.Empty;
-            int toneShift = 0;
-            if (note.phonemeAttributes != null) {
-                var attr = note.phonemeAttributes.FirstOrDefault(attr => attr.index == 0);
-                color = attr.voiceColor;
-                toneShift = attr.toneShift;
+            int noteIndex = 0;
+            for (int i = 0; i < phonemes.Count; i++) {
+                var attr = note.phonemeAttributes?.FirstOrDefault(attr => attr.index == i) ?? default;
+                string alt = attr.alternate?.ToString() ?? string.Empty;
+                string color = attr.voiceColor;
+                int toneShift = attr.toneShift;
+                var phoneme1 = phonemes[i];
+                while (noteIndex < notes.Length - 1 && notes[noteIndex].position - note.position < phoneme1.position) {
+                    noteIndex++;
+                }
+                int tone = (i == 0 && prevNeighbours != null && prevNeighbours.Length > 0)
+                    ? prevNeighbours.Last().tone : notes[noteIndex].tone;
+                if (singer.TryGetMappedOto($"{phoneme1.phoneme}{alt}", note.tone + toneShift, color, out var oto)) {
+                    phoneme1.phoneme = oto.Alias;
+                }
+                phonemes[i] = phoneme1;
             }
-            if (singer.TryGetMappedOto(phoneme, note.tone + toneShift, color, out var oto)) {
-                phoneme = oto.Alias;
-            } else {
-                phoneme = note.lyric;
-            }
-            return new Result {
-                phonemes = new Phoneme[] {
-                    new Phoneme {
-                        phoneme = phoneme,
-                    }
-                },
-            };
+            return new Result { phonemes = phonemes.ToArray() };
         }
     }
 }

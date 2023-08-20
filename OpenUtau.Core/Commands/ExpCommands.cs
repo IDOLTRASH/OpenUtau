@@ -12,6 +12,7 @@ namespace OpenUtau.Core {
         public string Key;
         public override ValidateOptions ValidateOptions
             => new ValidateOptions {
+                SkipTiming = true,
                 Part = Part,
                 SkipPhonemizer = true,
             };
@@ -41,7 +42,7 @@ namespace OpenUtau.Core {
 
     public class SetPhonemeExpressionCommand : ExpCommand {
         static readonly HashSet<string> needsPhonemizer = new HashSet<string> {
-            Format.Ustx.ALT, Format.Ustx.CLR, Format.Ustx.SHFT,
+            Format.Ustx.ALT, Format.Ustx.CLR, Format.Ustx.SHFT, Format.Ustx.VEL
         };
 
         public readonly UProject project;
@@ -51,6 +52,7 @@ namespace OpenUtau.Core {
         public readonly float oldValue;
         public override ValidateOptions ValidateOptions
             => new ValidateOptions {
+                SkipTiming = true,
                 Part = Part,
                 SkipPhonemizer = !needsPhonemizer.Contains(Key),
             };
@@ -63,8 +65,12 @@ namespace OpenUtau.Core {
             oldValue = phoneme.GetExpression(project, track, abbr).Item1;
         }
         public override string ToString() => $"Set phoneme expression {Key}";
-        public override void Execute() => phoneme.SetExpression(project, track, Key, newValue);
-        public override void Unexecute() => phoneme.SetExpression(project, track, Key, oldValue);
+        public override void Execute() {
+            phoneme.SetExpression(project, track, Key, newValue);
+        }
+        public override void Unexecute() {
+            phoneme.SetExpression(project, track, Key, oldValue);
+        }
     }
 
     public class ResetExpressionsCommand : ExpCommand {
@@ -85,6 +91,7 @@ namespace OpenUtau.Core {
     public abstract class PitchExpCommand : ExpCommand {
         public PitchExpCommand(UVoicePart part) : base(part) { }
         public override ValidateOptions ValidateOptions => new ValidateOptions {
+            SkipTiming = true,
             Part = Part,
             SkipPhonemizer = true,
             SkipPhoneme = true,
@@ -186,6 +193,19 @@ namespace OpenUtau.Core {
         public override void Unexecute() => Note.pitch = oldPitch;
     }
 
+    public class SetPitchPointsCommand : PitchExpCommand {
+        UPitch oldPitch;
+        UPitch newPitch;
+        public SetPitchPointsCommand(UVoicePart part, UNote note, UPitch pitch) : base(part) {
+            Note = note;
+            oldPitch = note.pitch;
+            newPitch = pitch;
+        }
+        public override string ToString() => "Set pitch points";
+        public override void Execute() => Note.pitch = newPitch;
+        public override void Unexecute() => Note.pitch = oldPitch;
+    }
+
     public class SetCurveCommand : ExpCommand {
         readonly UProject project;
         readonly string abbr;
@@ -197,6 +217,7 @@ namespace OpenUtau.Core {
         int[] oldYs;
         public override ValidateOptions ValidateOptions
             => new ValidateOptions {
+                SkipTiming = true,
                 Part = Part,
                 SkipPhonemizer = true,
                 SkipPhoneme = true,
@@ -237,7 +258,9 @@ namespace OpenUtau.Core {
                 curve.ys.AddRange(oldYs);
             }
         }
-        public override bool Mergeable => true;
+        public override bool CanMerge(IList<UCommand> commands) {
+            return commands.All(c => c is SetCurveCommand);
+        }
         public override UCommand Merge(IList<UCommand> commands) {
             var first = commands.First() as SetCurveCommand;
             var last = commands.Last() as SetCurveCommand;

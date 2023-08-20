@@ -24,14 +24,16 @@ namespace OpenUtau.Classic {
             Directory.CreateDirectory(basePath);
             this.basePath = basePath;
             this.progress = progress;
-            this.archiveEncoding = archiveEncoding ?? Encoding.GetEncoding("shift_jis");
-            this.textEncoding = textEncoding ?? Encoding.GetEncoding("shift_jis");
+            this.archiveEncoding = archiveEncoding;
+            this.textEncoding = textEncoding;
         }
 
-        public void LoadArchive(string path) {
+        public void Install(string path, string singerType) {
             progress.Invoke(0, "Analyzing archive...");
             var readerOptions = new ReaderOptions {
-                ArchiveEncoding = new ArchiveEncoding(archiveEncoding, archiveEncoding)
+                ArchiveEncoding = new ArchiveEncoding {
+                    Forced = archiveEncoding,
+                }
             };
             var extractionOptions = new ExtractionOptions {
                 Overwrite = true,
@@ -43,6 +45,11 @@ namespace OpenUtau.Classic {
                 int count = 0;
                 bool hasCharacterYaml = archive.Entries.Any(e => e.Key.EndsWith(kCharacterYaml));
                 foreach (var entry in archive.Entries) {
+                    progress.Invoke(100.0 * ++count / total, entry.Key);
+                    if (entry.Key.Contains("..")) {
+                        // Prevent zipSlip attack
+                        continue;
+                    }
                     var filePath = Path.Combine(basePath, entry.Key);
                     Directory.CreateDirectory(Path.GetDirectoryName(filePath));
                     if (!entry.IsDirectory && entry.Key != kInstallTxt) {
@@ -50,13 +57,25 @@ namespace OpenUtau.Classic {
                         if (!hasCharacterYaml && filePath.EndsWith(kCharacterTxt)) {
                             var config = new VoicebankConfig() {
                                 TextFileEncoding = textEncoding.WebName,
+                                SingerType = singerType,
                             };
                             using (var stream = File.Open(filePath.Replace(".txt", ".yaml"), FileMode.Create)) {
                                 config.Save(stream);
                             }
                         }
+                        if (hasCharacterYaml && filePath.EndsWith(kCharacterYaml)) {
+                            VoicebankConfig? config = null;
+                            using (var stream = File.Open(filePath, FileMode.Open)) {
+                                config = VoicebankConfig.Load(stream);
+                            }
+                            if (string.IsNullOrEmpty(config.SingerType)) {
+                                config.SingerType = singerType;
+                                using (var stream = File.Open(filePath, FileMode.Open)) {
+                                    config.Save(stream);
+                                }
+                            }
+                        }
                     }
-                    progress.Invoke(100.0 * ++count / total, entry.Key);
                 }
                 foreach (var touch in touches) {
                     File.WriteAllText(touch, "\n");

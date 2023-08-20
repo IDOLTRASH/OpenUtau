@@ -4,8 +4,12 @@ using System.IO;
 using System.Linq;
 using System.Reactive;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 using DynamicData.Binding;
+using NAudio.Wave;
+using NWaves.Signals;
 using OpenUtau.Classic;
 using OpenUtau.Core;
 using OpenUtau.Core.Ustx;
@@ -19,24 +23,34 @@ namespace OpenUtau.App.ViewModels {
         [Reactive] public USinger? Singer { get; set; }
         [Reactive] public Bitmap? Avatar { get; set; }
         [Reactive] public string? Info { get; set; }
-        [Reactive] public ObservableCollectionExtended<USubbank> Subbanks { get; set; }
-        [Reactive] public ObservableCollectionExtended<UOto> Otos { get; set; }
+        [Reactive] public bool HasWebsite { get; set; }
+        public bool IsClassic => Singer != null && Singer.SingerType == USingerType.Classic;
+        public ObservableCollectionExtended<USubbank> Subbanks => subbanks;
+        public ObservableCollectionExtended<UOto> Otos => otos;
+        public ObservableCollectionExtended<UOto> DisplayedOtos { get; set; } = new ObservableCollectionExtended<UOto>();
+        [Reactive] public bool ZoomInMel { get; set; }
         [Reactive] public UOto? SelectedOto { get; set; }
         [Reactive] public int SelectedIndex { get; set; }
-        [Reactive] public List<MenuItemViewModel> SetEncodingMenuItems { get; set; }
-        [Reactive] public List<MenuItemViewModel> SetDefaultPhonemizerMenuItems { get; set; }
+        public List<MenuItemViewModel> SetEncodingMenuItems => setEncodingMenuItems;
+        public List<MenuItemViewModel> SetDefaultPhonemizerMenuItems => setDefaultPhonemizerMenuItems;
 
-        private ReactiveCommand<Encoding, Unit> setEncodingCommand;
-        private ReactiveCommand<Api.PhonemizerFactory, Unit> setDefaultPhonemizerCommand;
+        [Reactive] public string SearchAlias { get; set; } = "";
+
+        private readonly ObservableCollectionExtended<USubbank> subbanks
+            = new ObservableCollectionExtended<USubbank>();
+        private readonly ObservableCollectionExtended<UOto> otos
+            = new ObservableCollectionExtended<UOto>();
+        private readonly ReactiveCommand<Encoding, Unit> setEncodingCommand;
+        private readonly List<MenuItemViewModel> setEncodingMenuItems;
+        private readonly ReactiveCommand<Api.PhonemizerFactory, Unit> setDefaultPhonemizerCommand;
+        private readonly List<MenuItemViewModel> setDefaultPhonemizerMenuItems;
 
         public SingersViewModel() {
-            Subbanks = new ObservableCollectionExtended<USubbank>();
-            Otos = new ObservableCollectionExtended<UOto>();
 #if DEBUG
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 #endif
             if (Singers.Count() > 0) {
-                Singer = Singers.First();
+                Singer = Singers.FirstOrDefault();
             }
             this.WhenAnyValue(vm => vm.Singer)
                 .WhereNotNull()
@@ -45,11 +59,18 @@ namespace OpenUtau.App.ViewModels {
                     Avatar = LoadAvatar(singer);
                     Otos.Clear();
                     Otos.AddRange(singer.Otos);
+                    DisplayedOtos.Clear();
+                    DisplayedOtos.AddRange(singer.Otos);
                     Info = $"Author: {singer.Author}\nVoice: {singer.Voice}\nWeb: {singer.Web}\nVersion: {singer.Version}\n{singer.OtherInfo}\n\n{string.Join("\n", singer.Errors)}";
+                    HasWebsite = !string.IsNullOrEmpty(singer.Web);
                     LoadSubbanks();
                     DocManager.Inst.ExecuteCmd(new OtoChangedNotification());
+                    this.RaisePropertyChanged(nameof(IsClassic));
                 });
-
+            this.WhenAnyValue(vm => vm.SearchAlias)
+                .Subscribe(alias => {
+                    Search();
+                });
 
             setEncodingCommand = ReactiveCommand.Create<Encoding>(encoding => {
                 SetEncoding(encoding);
@@ -64,7 +85,7 @@ namespace OpenUtau.App.ViewModels {
                 Encoding.GetEncoding("Windows-1252"),
                 Encoding.GetEncoding("macintosh"),
             };
-            SetEncodingMenuItems = encodings.Select(encoding =>
+            setEncodingMenuItems = encodings.Select(encoding =>
                 new MenuItemViewModel() {
                     Header = encoding.EncodingName,
                     Command = setEncodingCommand,
@@ -75,7 +96,7 @@ namespace OpenUtau.App.ViewModels {
             setDefaultPhonemizerCommand = ReactiveCommand.Create<Api.PhonemizerFactory>(factory => {
                 SetDefaultPhonemizer(factory);
             });
-            SetDefaultPhonemizerMenuItems = DocManager.Inst.PhonemizerFactories.Select(factory => new MenuItemViewModel() {
+            setDefaultPhonemizerMenuItems = DocManager.Inst.PhonemizerFactories.Select(factory => new MenuItemViewModel() {
                 Header = factory.ToString(),
                 Command = setDefaultPhonemizerCommand,
                 CommandParameter = factory,
@@ -89,8 +110,7 @@ namespace OpenUtau.App.ViewModels {
             try {
                 ModifyConfig(Singer, config => config.TextFileEncoding = encoding.WebName);
             } catch (Exception e) {
-                DocManager.Inst.ExecuteCmd(new UserMessageNotification(
-                    $"Failed to set encoding\n\n" + e.ToString()));
+                DocManager.Inst.ExecuteCmd(new ErrorMessageNotification("Failed to set encoding", e));
             }
             Refresh();
         }
@@ -102,8 +122,7 @@ namespace OpenUtau.App.ViewModels {
             try {
                 ModifyConfig(Singer, config => config.Portrait = filepath);
             } catch (Exception e) {
-                DocManager.Inst.ExecuteCmd(new UserMessageNotification(
-                    $"Failed to set portrait\n\n" + e.ToString()));
+                DocManager.Inst.ExecuteCmd(new ErrorMessageNotification("Failed to set portrait", e));
             }
             Refresh();
         }
@@ -113,10 +132,9 @@ namespace OpenUtau.App.ViewModels {
                 return;
             }
             try {
-                ModifyConfig(Singer, config => config.DefaultPhonemizer = factory.type.FullName);
+                ModifyConfig(Singer, config => config.DefaultPhonemizer = factory.type.FullName ?? string.Empty);
             } catch (Exception e) {
-                DocManager.Inst.ExecuteCmd(new UserMessageNotification(
-                    $"Failed to set portrait\n\n" + e.ToString()));
+                DocManager.Inst.ExecuteCmd(new ErrorMessageNotification("Failed to set portrait", e));
             }
             Refresh();
         }
@@ -136,6 +154,28 @@ namespace OpenUtau.App.ViewModels {
             using (var stream = File.Open(yamlFile, FileMode.Create)) {
                 config.Save(stream);
             }
+        }
+
+        public void ErrorReport() {
+            if (Singer == null || Singer.SingerType != USingerType.Classic) {
+                return;
+            }
+            Task.Run(() => {
+                var checker = new VoicebankErrorChecker(Singer.Location, Singer.BasePath);
+                checker.Check();
+                string outFile = Path.Combine(Singer.Location, "errors.txt");
+                using (var stream = File.Open(outFile, FileMode.Create)) {
+                    using (var writer = new StreamWriter(stream)) {
+                        writer.WriteLine($"Total errors: {checker.Errors.Count}");
+                        writer.WriteLine();
+                        for (var i = 0; i < checker.Errors.Count; i++) {
+                            writer.WriteLine($"------ Error {i + 1} ------");
+                            writer.WriteLine(checker.Errors[i].ToString());
+                        }
+                    }
+                }
+                OS.GotoFile(outFile);
+            });
         }
 
         public void Refresh() {
@@ -173,7 +213,7 @@ namespace OpenUtau.App.ViewModels {
                     OS.OpenFolder(Singer.Location);
                 }
             } catch (Exception e) {
-                DocManager.Inst.ExecuteCmd(new UserMessageNotification(e.ToString()));
+                DocManager.Inst.ExecuteCmd(new ErrorMessageNotification(e));
             }
         }
 
@@ -185,8 +225,7 @@ namespace OpenUtau.App.ViewModels {
             try {
                 Subbanks.AddRange(Singer.Subbanks);
             } catch (Exception e) {
-                DocManager.Inst.ExecuteCmd(new UserMessageNotification(
-                    $"Failed to load subbanks\n\n" + e.ToString()));
+                DocManager.Inst.ExecuteCmd(new ErrorMessageNotification("Failed to load subbanks", e));
             }
         }
 
@@ -207,6 +246,16 @@ namespace OpenUtau.App.ViewModels {
             if (Otos.Count > 0) {
                 index = Math.Clamp(index, 0, Otos.Count - 1);
                 SelectedIndex = index;
+            }
+        }
+
+        private void Search() {
+            if (string.IsNullOrWhiteSpace(SearchAlias)) {
+                DisplayedOtos.Clear();
+                DisplayedOtos.AddRange(Otos);
+            } else {
+                DisplayedOtos.Clear();
+                DisplayedOtos.AddRange(Otos.Where(o => o.Alias.Contains(SearchAlias)));
             }
         }
 
@@ -273,7 +322,7 @@ namespace OpenUtau.App.ViewModels {
             }
         }
 
-        private void NotifyOtoChanged() {
+        public void NotifyOtoChanged() {
             if (Singer != null) {
                 Singer.OtoDirty = true;
             }
@@ -285,7 +334,7 @@ namespace OpenUtau.App.ViewModels {
                 try {
                     Singer.Save();
                 } catch (Exception e) {
-                    DocManager.Inst.ExecuteCmd(new UserMessageNotification(e.ToString()));
+                    DocManager.Inst.ExecuteCmd(new ErrorMessageNotification(e));
                 }
             }
             RefreshSinger();
@@ -298,6 +347,72 @@ namespace OpenUtau.App.ViewModels {
                     SelectedOto = oto;
                 }
             }
+        }
+
+        public Task RegenFrq(string[] files, string? method, Action<int> progress) {
+            return Task.Run(() => {
+                double stepMs = Frq.kHopSize * 1000.0 / 44100;
+                int count = 0;
+                if (method == "crepe") {
+                    Parallel.For(0, files.Length, new ParallelOptions {
+                        MaxDegreeOfParallelism = Environment.ProcessorCount / 2
+                    },
+                    () => new Core.Analysis.Crepe.Crepe(),
+                    (i, loop, crepe) => {
+                        string file = files[i];
+                        if (!File.Exists(file)) {
+                            throw new FileNotFoundException(string.Format("File {0} missing!", file));
+                        }
+                        string frqFile = VoicebankFiles.GetFrqFile(file);
+                        DiscreteSignal? signal = null;
+                        using (var waveStream = Core.Format.Wave.OpenFile(file)) {
+                            signal = Core.Format.Wave.GetSignal(waveStream.ToSampleProvider().ToMono(1, 0));
+                        }
+                        if (signal != null) {
+                            var frq = Frq.Build(signal.Samples, crepe.ComputeF0(signal, stepMs));
+                            using (var stream = File.OpenWrite(frqFile)) {
+                                frq.Save(stream);
+                            }
+                        }
+                        progress.Invoke(Interlocked.Increment(ref count));
+                        return crepe;
+                    },
+                    crepe => crepe.Dispose());
+                } else {
+                    Parallel.ForEach(files, parallelOptions: new ParallelOptions {
+                        MaxDegreeOfParallelism = Environment.ProcessorCount / 2
+                    }, body: file => {
+                        if (!File.Exists(file)) {
+                            throw new FileNotFoundException(string.Format("File {0} missing!", file));
+                        }
+                        string frqFile = VoicebankFiles.GetFrqFile(file);
+                        float[]? samples;
+                        using (var waveStream = Core.Format.Wave.OpenFile(file)) {
+                            samples = Core.Format.Wave.GetSamples(waveStream.ToSampleProvider().ToMono(1, 0));
+                        }
+                        if (samples != null) {
+                            int f0Method;
+                            switch (method) {
+                                case "dioss":
+                                    f0Method = 1;
+                                    break;
+                                case "pyin":
+                                    f0Method = 2;
+                                    break;
+                                default:
+                                    f0Method = 0;
+                                    break;
+                            }
+                            var f0 = Core.Render.Worldline.F0(samples, 44100, stepMs, f0Method);
+                            var frq = Frq.Build(samples, f0);
+                            using (var stream = File.OpenWrite(frqFile)) {
+                                frq.Save(stream);
+                            }
+                        }
+                        progress.Invoke(Interlocked.Increment(ref count));
+                    });
+                }
+            });
         }
     }
 }

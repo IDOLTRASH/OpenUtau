@@ -73,9 +73,9 @@ namespace OpenUtau.Plugin.Builtin.Data {
         /// <summary>
         ///   Looks up a localized resource of type System.Byte[].
         /// </summary>
-        internal static byte[] g2p_arpabet {
+        internal static byte[] de_vccv_template {
             get {
-                object obj = ResourceManager.GetObject("g2p_arpabet", resourceCulture);
+                object obj = ResourceManager.GetObject("de_vccv_template", resourceCulture);
                 return ((byte[])(obj));
             }
         }
@@ -83,9 +83,9 @@ namespace OpenUtau.Plugin.Builtin.Data {
         /// <summary>
         ///   Looks up a localized resource of type System.Byte[].
         /// </summary>
-        internal static byte[] g2p_fr {
+        internal static byte[] envccv_template {
             get {
-                object obj = ResourceManager.GetObject("g2p_fr", resourceCulture);
+                object obj = ResourceManager.GetObject("envccv_template", resourceCulture);
                 return ((byte[])(obj));
             }
         }
@@ -93,9 +93,9 @@ namespace OpenUtau.Plugin.Builtin.Data {
         /// <summary>
         ///   Looks up a localized resource of type System.Byte[].
         /// </summary>
-        internal static byte[] g2p_pt {
+        internal static byte[] german_template {
             get {
-                object obj = ResourceManager.GetObject("g2p_pt", resourceCulture);
+                object obj = ResourceManager.GetObject("german_template", resourceCulture);
                 return ((byte[])(obj));
             }
         }
@@ -103,9 +103,9 @@ namespace OpenUtau.Plugin.Builtin.Data {
         /// <summary>
         ///   Looks up a localized resource of type System.Byte[].
         /// </summary>
-        internal static byte[] g2p_ru {
+        internal static byte[] xsampa_template {
             get {
-                object obj = ResourceManager.GetObject("g2p_ru", resourceCulture);
+                object obj = ResourceManager.GetObject("xsampa_template", resourceCulture);
                 return ((byte[])(obj));
             }
         }

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
@@ -9,7 +10,7 @@ using ReactiveUI;
 using Serilog;
 
 namespace OpenUtau.App.Controls {
-    class WaveformImage : Image {
+    class WaveformImage : Control {
         public static readonly DirectProperty<WaveformImage, double> TickWidthProperty =
             AvaloniaProperty.RegisterDirect<WaveformImage, double>(
                 nameof(TickWidth),
@@ -55,11 +56,8 @@ namespace OpenUtau.App.Controls {
                 });
         }
 
-        protected override void OnPropertyChanged<T>(AvaloniaPropertyChangedEventArgs<T> change) {
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change) {
             base.OnPropertyChanged(change);
-            if (!change.IsEffectiveValueChange) {
-                return;
-            }
             if (change.Property == DataContextProperty ||
                 change.Property == TickWidthProperty ||
                 change.Property == TickOffsetProperty ||
@@ -69,6 +67,9 @@ namespace OpenUtau.App.Controls {
         }
 
         public override void Render(DrawingContext context) {
+            if (DataContext == null || double.IsNaN(((NotesViewModel)DataContext).TickOffset)) {
+                return;
+            }
             var bitmap = GetBitmap();
             if (bitmap != null) {
                 Array.Clear(bitmapData, 0, bitmapData.Length);
@@ -78,8 +79,8 @@ namespace OpenUtau.App.Controls {
                     var project = viewModel.Project;
                     var part = viewModel.Part;
                     if (project != null && part != null && part.Mix != null) {
-                        double leftMs = project.TickToMillisecond(viewModel.TickOrigin + viewModel.TickOffset);
-                        double rightMs = project.TickToMillisecond(viewModel.TickOrigin + viewModel.TickOffset + viewModel.ViewportTicks);
+                        double leftMs = project.timeAxis.TickPosToMsPos(viewModel.TickOrigin + viewModel.TickOffset);
+                        double rightMs = project.timeAxis.TickPosToMsPos(viewModel.TickOrigin + viewModel.TickOffset + viewModel.ViewportTicks);
                         int samplePos = (int)(leftMs * 44100 / 1000) * 2;
                         sampleCount = (int)((rightMs - leftMs) * 44100 / 1000) * 2;
                         if (sampleData.Length < sampleCount) {
@@ -88,19 +89,19 @@ namespace OpenUtau.App.Controls {
                         Array.Clear(sampleData, 0, sampleData.Length);
                         part.Mix.Mix(samplePos, sampleData, 0, sampleCount);
 
-                        double samplesPerPixel = (double)sampleCount / bitmap.PixelSize.Width;
                         int startSample = 0;
                         for (int i = 0; i < bitmap.PixelSize.Width; ++i) {
-                            int endSample = Math.Min(sampleCount, (int)(i * samplesPerPixel));
-                            float max = 0;
-                            float min = 0;
-                            for (int j = startSample; j < endSample; ++j) {
-                                max = Math.Max(max, sampleData[j]);
-                                min = Math.Min(min, sampleData[j]);
+                            double endTick = viewModel.TickOrigin + viewModel.TickOffset + (i + 1.0) / viewModel.TickWidth;
+                            double endMs = project.timeAxis.TickPosToMsPos(endTick);
+                            int endSample = Math.Clamp((int)((endMs - leftMs) * 44100 / 1000) * 2, 0, sampleCount);
+                            if (endSample > startSample) {
+                                var segment = new ArraySegment<float>(sampleData, startSample, endSample - startSample);
+                                float min = 0.5f + segment.Min() * 0.5f;
+                                float max = 0.5f + segment.Max() * 0.5f;
+                                float yMax = Math.Clamp(max * bitmap.PixelSize.Height, 0, bitmap.PixelSize.Height - 1);
+                                float yMin = Math.Clamp(min * bitmap.PixelSize.Height, 0, bitmap.PixelSize.Height - 1);
+                                DrawPeak(bitmapData, bitmap.PixelSize.Width, i, (int)Math.Round(yMin), (int)Math.Round(yMax));
                             }
-                            float yMax = Math.Clamp(-max + 1f, 0, 2) * 0.5f * (bitmap.PixelSize.Height - 2) + 1;
-                            float yMin = Math.Clamp(-min + 1f, 0, 2) * 0.5f * (bitmap.PixelSize.Height - 2) + 1;
-                            DrawPeak(bitmapData, bitmap.PixelSize.Width, i, (int)yMax, (int)yMin);
                             startSample = endSample;
                         }
                     }
@@ -110,16 +111,16 @@ namespace OpenUtau.App.Controls {
                 }
             }
             base.Render(context);
+            if (bitmap != null) {
+                var rect = Bounds.WithX(0).WithY(0);
+                context.DrawImage(bitmap, rect, rect);
+            }
         }
 
         private WriteableBitmap? GetBitmap() {
-            if (Parent == null) {
-                return null;
-            }
-            int desiredWidth = (int)Parent.Bounds.Width;
-            int desiredHeight = (int)Parent.Bounds.Height;
-            if (bitmap == null || bitmap.Size.Width != desiredWidth) {
-                Source = null;
+            int desiredWidth = (int)Bounds.Width;
+            int desiredHeight = (int)Bounds.Height;
+            if (bitmap == null || bitmap.Size.Width < desiredWidth) {
                 bitmap?.Dispose();
                 var size = new PixelSize(desiredWidth, desiredHeight);
                 bitmap = new WriteableBitmap(
@@ -128,9 +129,6 @@ namespace OpenUtau.App.Controls {
                     Avalonia.Platform.AlphaFormat.Unpremul);
                 Log.Information($"Created bitmap {size}");
                 bitmapData = new int[size.Width * size.Height];
-                Source = bitmap;
-                Width = bitmap.Size.Width;
-                Height = bitmap.Size.Height;
             }
             return bitmap;
         }

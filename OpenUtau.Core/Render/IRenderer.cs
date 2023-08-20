@@ -1,8 +1,12 @@
-﻿using System.Threading;
+﻿using System;
+using System.Threading;
 using System.Threading.Tasks;
 using OpenUtau.Core.Ustx;
 
 namespace OpenUtau.Core.Render {
+    public class NoResamplerException : Exception { }
+    public class NoWavtoolException : Exception { }
+
     /// <summary>
     /// Render result of a phrase.
     /// </summary>
@@ -40,5 +44,6 @@ namespace OpenUtau.Core.Render {
         RenderResult Layout(RenderPhrase phrase);
         Task<RenderResult> Render(RenderPhrase phrase, Progress progress, CancellationTokenSource cancellation, bool isPreRender = false);
         RenderPitchResult LoadRenderedPitch(RenderPhrase phrase);
+        UExpressionDescriptor[] GetSuggestedExpressions(USinger singer, URenderSettings renderSettings);
     }
 }
